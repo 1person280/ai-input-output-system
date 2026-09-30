@@ -7,7 +7,7 @@
 | Model | Qwen3-4B-Instruct |
 | Quantization | **Q8_0** (INT8) |
 | Context window | **65,536 tokens** |
-| File name | `Qwen3-4B-Instruct-Q8_0.gguf` (~4.5 GB, placeholder figure) |
+| File name | `Qwen3-4B-Instruct-Q8_0.gguf` (~4.28 GB) |
 | Runtime | [llama.cpp](https://github.com/ggerganov/llama.cpp) `llama-server` |
 
 ## Where the file lives
@@ -20,11 +20,12 @@
 ## Downloading the weights
 
 The repository ships **only the script** — no weights are downloaded, committed
-or bundled. The default URL in `scripts/download-model.mjs` is a placeholder
-(`https://huggingface.co/<org>/<repo>/...`); point it at a mirror you trust:
+or bundled. `scripts/download-model.mjs` defaults to
+`Qwen/Qwen3-4B-GGUF` → `Qwen3-4B-Q8_0.gguf` on Hugging Face:
 
 ```bash
-node scripts/download-model.mjs --url https://<mirror>/Qwen3-4B-Instruct-Q8_0.gguf \
+node scripts/download-model.mjs
+node scripts/download-model.mjs --url https://<mirror>/Qwen3-4B-Q8_0.gguf \
                                 --sha256 <expected-hex-digest>
 ```
 
@@ -32,8 +33,8 @@ Behaviour:
 
 - streams the response with the built-in `fetch` (no extra dependency);
 - writes to `<out>.part` and only renames it on success;
-- computes SHA-256 while streaming; pass `--sha256 skip` to only print it;
-- refuses to run while the URL still contains the `<org>` placeholder.
+- computes SHA-256 while streaming; the default `--sha256 skip` only prints it;
+- refuses to run while the URL still contains an `<org>` placeholder.
 
 Run `node scripts/download-model.mjs --help` for all flags.
 

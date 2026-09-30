@@ -2,10 +2,11 @@
 /**
  * Streams a GGUF model into ./models using the built-in fetch.
  *
- * The default URL and checksum are placeholders: point them at the mirror you
- * trust (see docs/model.md) before running.
+ * The default target is Qwen3-4B (Q8_0, ~4.28 GB) — 4B weights at 1 byte each.
+ * Pass --sha256 <hex> to enforce integrity; without it the download is only
+ * reported, never silently trusted.
  *
- *   node scripts/download-model.mjs --out models/Qwen3-4B-Instruct-Q8_0.gguf
+ *   node scripts/download-model.mjs
  *   node scripts/download-model.mjs --url https://.../model.gguf --sha256 <hex>
  */
 
@@ -19,10 +20,10 @@ import { fileURLToPath } from 'node:url';
 
 const PLACEHOLDER_HOST = '<org>';
 const DEFAULT_URL =
-  'https://huggingface.co/<org>/<repo>/resolve/main/Qwen3-4B-Instruct-Q8_0.gguf';
-const DEFAULT_SHA256 = '<paste-sha256-of-the-gguf-here>';
+  'https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q8_0.gguf';
+const DEFAULT_SHA256 = 'skip';
 const DEFAULT_OUT = 'models/Qwen3-4B-Instruct-Q8_0.gguf';
-const EXPECTED_BYTES = 4_500_000_000;
+const EXPECTED_BYTES = 4_280_404_704;
 
 function parseArgs(argv) {
   const options = { url: DEFAULT_URL, sha256: DEFAULT_SHA256, out: DEFAULT_OUT, force: false };
@@ -49,7 +50,7 @@ function usage() {
     '  --out <path>      Destination path (default: ' + DEFAULT_OUT + ')',
     '  --force           Re-download even when the file already exists',
     '',
-    'Note: the default URL/checksum are placeholders.',
+    'Default target: Qwen3-4B Q8_0 (~4.28 GB) from Hugging Face.',
   ].join('\n');
 }
 

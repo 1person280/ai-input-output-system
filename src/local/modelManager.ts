@@ -13,9 +13,10 @@ export interface ModelSpec {
   fileName: string;
   quantization: string;
   contextTokens: number;
-  /** Placeholder URL — see docs/model.md for how to point it at a real mirror. */
+  /** Upstream GGUF location; override per mirror in docs/model.md. */
   downloadUrl: string;
   approxBytes: number;
+  /** Expected SHA-256, or `skip` to download without enforcing integrity. */
   sha256: string;
 }
 
@@ -24,9 +25,9 @@ export const DEFAULT_MODEL: ModelSpec = {
   fileName: 'Qwen3-4B-Instruct-Q8_0.gguf',
   quantization: 'Q8_0',
   contextTokens: 65536,
-  downloadUrl: 'https://huggingface.co/<org>/<repo>/resolve/main/Qwen3-4B-Instruct-Q8_0.gguf',
-  approxBytes: 4_500_000_000,
-  sha256: '<paste-sha256-of-the-gguf-here>',
+  downloadUrl: 'https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q8_0.gguf',
+  approxBytes: 4_280_404_704,
+  sha256: 'skip',
 };
 
 export interface ServerLaunchOptions {
