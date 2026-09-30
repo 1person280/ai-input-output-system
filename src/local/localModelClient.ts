@@ -79,11 +79,19 @@ export class LocalModelClient {
     messages: ChatMessage[],
     signal?: AbortSignal
   ): Promise<CompletionResult> {
+    // Qwen3 等支持「思考模式」的模型默认会先输出大段推理，token 全落在
+    // reasoning_content 上，导致 choices[0].message.content 变成空字符串、
+    // finish_reason=length。llama.cpp 读取请求体里的 chat_template_kwargs
+    // 透传给 chat 模板，显式关闭 enable_thinking 才会直接产出正文。
+    // 该字段对不支持思考模式的模型无害（模板会忽略未知 kwargs）。
     const body = JSON.stringify({
       messages,
       temperature: 0.2,
       stream: false,
+      // 关闭思考后输出只是一份 JSON 文件计划，1024 个 token 足够容纳；此处
+      // 不为了绕过空内容而盲目调大上限。
       max_tokens: 1024,
+      chat_template_kwargs: { enable_thinking: false },
     });
     const response = await fetchWithTimeout(
       `${this.serverUrl}/v1/chat/completions`,
@@ -103,8 +111,11 @@ export class LocalModelClient {
       usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
     const text = payload.choices?.[0]?.message?.content;
-    if (typeof text !== 'string') {
-      throw new LlmClientError('Local server returned no completion text');
+    // 空字符串同样视为无效：思考模式下 content 可能为空、真正的推理落在
+    // reasoning_content 里。思考内容不是可直接使用的答案，不得当作结果返回；
+    // 这里抛出 LlmClientError，由上层编排器捕获并降级到云端/启发式。
+    if (typeof text !== 'string' || text.trim().length === 0) {
+      throw new LlmClientError('Local server returned no usable completion text');
     }
     return {
       text,

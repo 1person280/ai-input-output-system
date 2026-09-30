@@ -13,6 +13,10 @@ tsconfig.json
 vitest.config.*
 node_modules/**
 
+# Local model weights (multi-GB, fetched at runtime; never shipped in the VSIX)
+models/**
+*.gguf
+
 # Meta files not needed at runtime
 .gitignore
 CHANGELOG.md
