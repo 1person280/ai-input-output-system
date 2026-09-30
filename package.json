@@ -1,0 +1,112 @@
+{
+  "name": "ai-input-output-system",
+  "displayName": "AI Input/Output System",
+  "description": "Local-first AI request routing for VS Code: answer simple prompts with a local 4B model, forward only complex work to the cloud.",
+  "version": "0.1.0",
+  "publisher": "ai-input-output-system",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0",
+    "node": ">=18"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "keywords": [
+    "ai",
+    "local-llm",
+    "llama.cpp",
+    "routing",
+    "openai"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ai-input-output-system/ai-input-output-system.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ai-input-output-system/ai-input-output-system/issues"
+  },
+  "homepage": "https://github.com/ai-input-output-system/ai-input-output-system#readme",
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "aiio.routePrompt",
+        "title": "AI I/O: Route Prompt (Local or Cloud)"
+      },
+      {
+        "command": "aiio.showDashboard",
+        "title": "AI I/O: Show Savings Dashboard"
+      },
+      {
+        "command": "aiio.manageModel",
+        "title": "AI I/O: Manage Local Model"
+      }
+    ],
+    "configuration": {
+      "title": "AI Input/Output System",
+      "properties": {
+        "aiio.cloudBaseUrl": {
+          "type": "string",
+          "default": "https://api.openai.com/v1",
+          "description": "OpenAI-compatible base URL used when a request is routed to the cloud."
+        },
+        "aiio.cloudApiKey": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "API key for the cloud endpoint. Stored in VS Code settings; prefer a secret-managed proxy in shared machines."
+        },
+        "aiio.cloudModel": {
+          "type": "string",
+          "default": "gpt-4o-mini",
+          "description": "Model name sent to the cloud endpoint."
+        },
+        "aiio.localServerUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:8080",
+          "description": "Base URL of a running llama.cpp llama-server instance."
+        },
+        "aiio.localModelPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the local GGUF model. Empty means ./models inside the extension workspace."
+        },
+        "aiio.routingThreshold": {
+          "type": "number",
+          "default": 0.5,
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Complexity score above which a request is sent to the cloud. Lower means more cloud traffic."
+        },
+        "aiio.enableLocalRouting": {
+          "type": "boolean",
+          "default": true,
+          "description": "When disabled every request goes to the cloud."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run",
+    "package": "npx @vscode/vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "esbuild": "^0.21.5",
+    "eslint": "^8.57.0",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  }
+}

@@ -1,0 +1,21 @@
+# Sources and build inputs (the bundle in dist/ is shipped instead)
+src/**
+**/*.test.ts
+scripts/**
+docs/**
+.github/**
+.vscode/**
+
+# Tooling
+esbuild.mjs
+tsconfig.json
+.eslintrc.json
+vitest.config.*
+node_modules/**
+
+# Meta files not needed at runtime
+.gitignore
+CHANGELOG.md
+CONTRIBUTING.md
+*.vsix
+**/*.map

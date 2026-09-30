@@ -1,0 +1,13 @@
+node_modules/
+dist/
+out/
+coverage/
+*.vsix
+*.log
+.DS_Store
+
+# Local model weights are large and never committed
+models/
+*.gguf
+
+.vscode-test/
