@@ -38,7 +38,7 @@ prompt ──▶ classify(text, context) ──▶ RequestFeatures.complexity
 4. **Measure** — every decision is appended to a ledger that feeds the status bar
    and the dashboard.
 
-Details: [`docs/routing.md`](docs/routing.md) · [`docs/architecture.md`](docs/architecture.md) · [`docs/model.md`](docs/model.md).
+Details: [`docs/routing.md`](docs/routing.md) · [`docs/architecture.md`](docs/architecture.md) · [`docs/model.md`](docs/model.md) · [`docs/agent.md`](docs/agent.md).
 
 ## Install
 
@@ -76,6 +76,9 @@ llama-server -m models/Qwen3-4B-Instruct-Q8_0.gguf --ctx-size 65536 -ngl 99
 | `aiio.localModelPath` | string | `""` | Absolute path to the GGUF; empty means `<workspace>/models`. |
 | `aiio.routingThreshold` | number | `0.5` | Complexity above which requests go to the cloud. |
 | `aiio.enableLocalRouting` | boolean | `true` | Master switch; `false` sends everything to the cloud. |
+| `aiio.autonomousOnStartup` | boolean | `false` | Create files from `aiio.autonomousRequirement` on activation. |
+| `aiio.autonomousRequirement` | string | `""` | Requirement used for startup creation; empty disables it. |
+| `aiio.targetSubdirectory` | string | `aiio-generated` | Workspace-relative folder for generated files. |
 
 ## Commands
 
@@ -84,6 +87,7 @@ llama-server -m models/Qwen3-4B-Instruct-Q8_0.gguf --ctx-size 65536 -ngl 99
 | AI I/O: Route Prompt (Local or Cloud) | `aiio.routePrompt` | Asks for a prompt, shows the routing decision, and returns the answer. |
 | AI I/O: Show Savings Dashboard | `aiio.showDashboard` | Opens the webview dashboard (also bound to the status bar). |
 | AI I/O: Manage Local Model | `aiio.manageModel` | Inspect / download / start / stop the local model. |
+| AI I/O: Create Files From Requirement | `aiio.createFromRequirement` | Turn a natural-language requirement into files in the workspace. |
 
 ## How the savings are computed
 
@@ -104,6 +108,17 @@ From the ledger:
 Fallbacks are recorded with the **actual** route (`cloud`), so a failed local
 attempt never inflates the savings. Token counts are estimates: CJK characters
 are counted as one token each, everything else at ~4 characters per token.
+
+## Autonomous file creation
+
+Give the extension a requirement in plain language and it writes the files
+itself. Planning tries three sources in order — **local model → cloud model →
+offline heuristic** — then persists the result into
+`<workspace>/<aiio.targetSubdirectory>`. The offline heuristic is a real
+fallback: it infers the file name from the requirement and embeds the
+requirement text into a type-appropriate skeleton, so a file is always produced
+even with no local server and no cloud key. See
+[`docs/agent.md`](docs/agent.md) for the full flow and how to verify it.
 
 ## Development
 

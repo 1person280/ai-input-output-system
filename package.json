@@ -45,6 +45,10 @@
       {
         "command": "aiio.manageModel",
         "title": "AI I/O: Manage Local Model"
+      },
+      {
+        "command": "aiio.createFromRequirement",
+        "title": "AI I/O: Create Files From Requirement"
       }
     ],
     "configuration": {
@@ -86,6 +90,21 @@
           "type": "boolean",
           "default": true,
           "description": "When disabled every request goes to the cloud."
+        },
+        "aiio.autonomousOnStartup": {
+          "type": "boolean",
+          "default": false,
+          "description": "When enabled, the extension creates files from aiio.autonomousRequirement on activation."
+        },
+        "aiio.autonomousRequirement": {
+          "type": "string",
+          "default": "",
+          "description": "Natural-language requirement used for autonomous file creation. Empty disables the startup run."
+        },
+        "aiio.targetSubdirectory": {
+          "type": "string",
+          "default": "aiio-generated",
+          "description": "Workspace-relative subdirectory where autonomously generated files are written."
         }
       }
     }

@@ -3,6 +3,7 @@
  */
 
 import * as vscode from 'vscode';
+import type { AutonomousCreator } from '../agent/autonomousCreator';
 import { ExtensionSettings } from '../config/settings';
 import { buildDownloadCommand, ModelManager } from '../local/modelManager';
 import { MetricsStore } from '../metrics/metricsStore';
@@ -13,6 +14,7 @@ import { SHOW_DASHBOARD_COMMAND } from './statusBar';
 
 export const ROUTE_PROMPT_COMMAND = 'aiio.routePrompt';
 export const MANAGE_MODEL_COMMAND = 'aiio.manageModel';
+export const CREATE_FROM_REQUIREMENT_COMMAND = 'aiio.createFromRequirement';
 export { SHOW_DASHBOARD_COMMAND };
 
 export interface CommandServices {
@@ -20,6 +22,8 @@ export interface CommandServices {
   models: ModelManager;
   getSettings(): ExtensionSettings;
   getRouter(): Router;
+  /** 按当前配置组装自主创建文件的编排器。 */
+  getAutonomousCreator(): AutonomousCreator;
   /** Re-render the status bar and dashboard after a mutation. */
   refreshViews(): void;
 }
@@ -154,6 +158,62 @@ async function manageModel(services: CommandServices): Promise<void> {
   }
 }
 
+async function createFromRequirement(services: CommandServices): Promise<void> {
+  const settings = services.getSettings();
+  const requirement = await vscode.window.showInputBox({
+    title: 'AI I/O · 依据需求自主创建文件',
+    prompt: '用自然语言描述你需要的文件，扩展会自行解码并写入工作区。',
+    placeHolder: '例如：创建一个 python 脚本读取 csv 并输出摘要',
+    value: settings.autonomous.requirement,
+    ignoreFocusOut: true,
+  });
+  if (!requirement || requirement.trim().length === 0) {
+    return;
+  }
+
+  try {
+    const plan = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: 'AI I/O · 正在解码需求并生成文件…',
+      },
+      () => services.getAutonomousCreator().createFilesFromRequirement(requirement.trim())
+    );
+
+    const names = plan.files.map((file) => file.path).join('、');
+    const openLabel = '打开文件';
+    const choice = await vscode.window.showInformationMessage(
+      `已创建 ${plan.files.length} 个文件（来源：${plan.source}）：${names}`,
+      openLabel
+    );
+    if (choice === openLabel && plan.files.length > 0) {
+      await openCreatedFile(services, plan.files[0].path);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    void vscode.window.showErrorMessage(`AI I/O 自主创建文件失败：${message}`);
+  }
+}
+
+/** 打开刚生成的文件（拼接工作区根 + 目标子目录）。 */
+async function openCreatedFile(
+  services: CommandServices,
+  relativePath: string
+): Promise<void> {
+  const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+  if (!root) {
+    return;
+  }
+  const segments = relativePath.split('/').filter((segment) => segment.length > 0);
+  const uri = vscode.Uri.joinPath(
+    root,
+    services.getSettings().autonomous.targetSubdirectory,
+    ...segments
+  );
+  const document = await vscode.workspace.openTextDocument(uri);
+  await vscode.window.showTextDocument(document, { preview: true });
+}
+
 function safePort(serverUrl: string): number {
   try {
     const parsed = new URL(serverUrl);
@@ -178,6 +238,9 @@ export function registerCommands(
     }),
     vscode.commands.registerCommand(MANAGE_MODEL_COMMAND, () =>
       manageModel(services)
+    ),
+    vscode.commands.registerCommand(CREATE_FROM_REQUIREMENT_COMMAND, () =>
+      createFromRequirement(services)
     )
   );
 }

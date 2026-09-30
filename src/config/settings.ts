@@ -21,10 +21,20 @@ export interface RoutingSettings {
   enableLocalRouting: boolean;
 }
 
+export interface AutonomousSettings {
+  /** 激活时是否自动依据 autonomousRequirement 创建文件。 */
+  onStartup: boolean;
+  /** 启动时使用的自然语言需求；为空则不触发。 */
+  requirement: string;
+  /** 相对工作区根的子目录，所有生成文件落在这里。 */
+  targetSubdirectory: string;
+}
+
 export interface ExtensionSettings {
   cloud: CloudSettings;
   local: LocalSettings;
   routing: RoutingSettings;
+  autonomous: AutonomousSettings;
 }
 
 const SECTION = 'aiio';
@@ -58,6 +68,11 @@ export function readSettings(): ExtensionSettings {
         read('routingThreshold', DEFAULT_ROUTING_THRESHOLD)
       ),
       enableLocalRouting: read('enableLocalRouting', true),
+    },
+    autonomous: {
+      onStartup: read('autonomousOnStartup', false),
+      requirement: read('autonomousRequirement', ''),
+      targetSubdirectory: read('targetSubdirectory', 'aiio-generated'),
     },
   };
 }
