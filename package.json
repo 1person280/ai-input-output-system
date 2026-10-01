@@ -22,12 +22,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/ai-input-output-system/ai-input-output-system.git"
+    "url": "https://github.com/1person280/ai-input-output-system.git"
   },
   "bugs": {
-    "url": "https://github.com/ai-input-output-system/ai-input-output-system/issues"
+    "url": "https://github.com/1person280/ai-input-output-system/issues"
   },
-  "homepage": "https://github.com/ai-input-output-system/ai-input-output-system#readme",
+  "homepage": "https://github.com/1person280/ai-input-output-system#readme",
   "main": "./dist/extension.js",
   "activationEvents": [
     "onStartupFinished"
