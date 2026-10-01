@@ -7,6 +7,8 @@ import type { AutonomousCreator } from '../agent/autonomousCreator';
 import { ExtensionSettings } from '../config/settings';
 import { buildDownloadCommand, ModelManager } from '../local/modelManager';
 import { MetricsStore } from '../metrics/metricsStore';
+import type { FeedbackVerdict } from '../routing/decisionJournal';
+import type { OnlineQuality } from '../routing/decisionQuality';
 import type { EditorContext } from '../routing/requestClassifier';
 import { Router } from '../routing/router';
 import { showDashboardPanel } from './dashboardPanel';
@@ -24,6 +26,10 @@ export interface CommandServices {
   getRouter(): Router;
   /** 按当前配置组装自主创建文件的编排器。 */
   getAutonomousCreator(): AutonomousCreator;
+  /** 记录一次路由决定的人工反馈，用于决策质量校准。 */
+  recordFeedback(requestId: string, verdict: FeedbackVerdict): void | Promise<void>;
+  /** 当前的路由决策质量（在线指标），供仪表盘展示。 */
+  getRoutingQuality(): OnlineQuality;
   /** Re-render the status bar and dashboard after a mutation. */
   refreshViews(): void;
 }
@@ -99,9 +105,35 @@ async function routePrompt(services: CommandServices): Promise<void> {
     ].join('\n');
 
     await showAnswer(`${header}${outcome.completion.text}\n`);
+
+    if (services.getSettings().routing.collectFeedback && outcome.route === 'local') {
+      await collectFeedback(services, outcome.requestId);
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     void vscode.window.showErrorMessage(`AI I/O routing failed: ${message}`);
+  }
+}
+
+/**
+ * Ask the user whether a locally answered prompt was good enough. Only local
+ * answers are worth asking about: a cloud answer was already paid for, and this
+ * signal is what calibrates the local routing threshold.
+ */
+async function collectFeedback(
+  services: CommandServices,
+  requestId: string
+): Promise<void> {
+  const good = '够用';
+  const bad = '不满意';
+  const choice = await vscode.window.showInformationMessage(
+    'AI I/O · 这次本地回答够用吗？反馈会用于校准路由阈值。',
+    good,
+    bad
+  );
+  if (choice === good || choice === bad) {
+    await services.recordFeedback(requestId, choice === good ? 'good' : 'bad');
+    services.refreshViews();
   }
 }
 
@@ -234,7 +266,11 @@ export function registerCommands(
     vscode.commands.registerCommand(SHOW_DASHBOARD_COMMAND, () => {
       const panel = showDashboardPanel();
       const ledger = services.metrics.current;
-      panel.update(ledger.snapshot(), ledger.allEntries());
+      panel.update(
+        ledger.snapshot(),
+        ledger.allEntries(),
+        services.getRoutingQuality()
+      );
     }),
     vscode.commands.registerCommand(MANAGE_MODEL_COMMAND, () =>
       manageModel(services)

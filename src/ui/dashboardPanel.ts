@@ -7,18 +7,12 @@
 
 import * as vscode from 'vscode';
 import type { LedgerEntry, LedgerSnapshot } from '../metrics/savingsLedger';
+import type { OnlineQuality } from '../routing/decisionQuality';
+import { escapeHtml } from './htmlEscape';
+import { renderRoutingQualitySection } from './routingQualitySection';
 
 export const DASHBOARD_VIEW_TYPE = 'aiio.dashboard';
 const RECENT_LIMIT = 10;
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
 
 function formatTokens(tokens: number): string {
   if (tokens >= 1_000_000) {
@@ -79,7 +73,8 @@ function renderRecent(entries: ReadonlyArray<LedgerEntry>): string {
 
 export function renderDashboardHtml(
   snapshot: LedgerSnapshot,
-  recent: ReadonlyArray<LedgerEntry> = []
+  recent: ReadonlyArray<LedgerEntry> = [],
+  quality: OnlineQuality | null = null
 ): string {
   const cards = [
     renderCard('Local share', percent(snapshot.savingsRatio), 'requests answered without the cloud'),
@@ -126,6 +121,8 @@ export function renderDashboardHtml(
   <div class="cards">${cards}</div>
   <h2>Request split</h2>
   ${renderSplitBar(snapshot)}
+  <h2>Routing quality</h2>
+  ${renderRoutingQualitySection(quality)}
   <h2>Recent decisions</h2>
   ${renderRecent(recent)}
 </body>
@@ -153,11 +150,15 @@ export class DashboardPanel implements vscode.Disposable {
     return Boolean(this.panel);
   }
 
-  update(snapshot: LedgerSnapshot, recent: ReadonlyArray<LedgerEntry> = []): void {
+  update(
+    snapshot: LedgerSnapshot,
+    recent: ReadonlyArray<LedgerEntry> = [],
+    quality: OnlineQuality | null = null
+  ): void {
     if (!this.panel) {
       return;
     }
-    this.panel.webview.html = renderDashboardHtml(snapshot, recent);
+    this.panel.webview.html = renderDashboardHtml(snapshot, recent, quality);
   }
 
   reveal(): void {

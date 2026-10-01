@@ -6,6 +6,8 @@
 
 import { CloudClient, ChatMessage, CompletionResult, LlmClientError } from '../cloud/cloudClient';
 import { LocalModelClient } from '../local/localModelClient';
+import { ClassifierWeights } from './classifierWeights';
+import { DecisionRecord, DecisionRecordInput } from './decisionJournal';
 import { classify, EditorContext, RequestFeatures, RouteKind } from './requestClassifier';
 import { explainRoute, RouteDecision, RoutingPolicyOptions } from './routingPolicy';
 
@@ -13,9 +15,16 @@ export interface LedgerSink {
   record(route: RouteKind, estimatedTokens: number): Promise<unknown> | void;
 }
 
+/** Destination for the decision-quality journal; optional and fire-and-forget. */
+export interface JournalSink {
+  recordDecision(input: DecisionRecordInput): Promise<DecisionRecord> | void;
+}
+
 export interface RouterOptions extends RoutingPolicyOptions {
   /** When the local server is unreachable, transparently retry on the cloud. */
   fallbackToCloud: boolean;
+  /** Classifier coefficients; omitted means the tuned defaults. */
+  weights?: Partial<ClassifierWeights>;
 }
 
 export interface RouteOutcome {
@@ -38,6 +47,8 @@ export interface RouterDependencies {
   local: LocalModelClient | null;
   ledger: LedgerSink;
   options: RouterOptions;
+  /** Decision-quality journal; optional because it is an analytics extra. */
+  journal?: JournalSink;
 }
 
 let requestCounter = 0;
@@ -75,7 +86,7 @@ export class Router {
 
   /** Pure preview used by the UI to explain a decision before executing it. */
   preview(prompt: string, context: EditorContext = {}): RoutePreview {
-    const features = classify(prompt, context);
+    const features = classify(prompt, context, { weights: this.deps.options.weights });
     const decision = explainRoute(
       features,
       this.deps.options.threshold,
@@ -90,6 +101,9 @@ export class Router {
     signal?: AbortSignal
   ): Promise<RouteOutcome> {
     const startedAt = Date.now();
+    // The id is minted up front so the ledger, the journal and the UI all refer
+    // to the same request.
+    const requestId = nextRequestId();
     const { features, decision } = this.preview(prompt, context);
     const messages = buildMessages(prompt, context);
 
@@ -117,9 +131,18 @@ export class Router {
     }
 
     await this.deps.ledger.record(route, features.estimatedTokens);
+    await this.deps.journal?.recordDecision({
+      requestId,
+      predictedRoute: decision.route,
+      actualRoute: route,
+      fallbackUsed,
+      complexity: features.complexity,
+      threshold: decision.threshold,
+      tokenEstimate: features.estimatedTokens,
+    });
 
     return {
-      requestId: nextRequestId(),
+      requestId,
       route,
       fallbackUsed,
       features,

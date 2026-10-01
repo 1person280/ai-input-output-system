@@ -4,7 +4,23 @@
  * `classify` turns a raw prompt plus a light-weight editor context into a
  * `RequestFeatures` value object. It never touches the VS Code API so it can be
  * unit tested in a plain Node process.
+ *
+ * Both the coefficients ({@link ClassifierWeights}) and the vocabulary
+ * ({@link IntentLexicon}) are injectable; the defaults reproduce the original
+ * hand-tuned behaviour exactly.
  */
+
+import {
+  ClassifierWeights,
+  normaliseWeights,
+} from './classifierWeights';
+import {
+  CompiledIntentPattern,
+  CompiledLexicon,
+  compileLexicon,
+  DEFAULT_INTENT_LEXICON,
+  IntentLexicon,
+} from './intentLexicon';
 
 export type RouteKind = 'local' | 'cloud';
 
@@ -33,58 +49,21 @@ export interface RequestFeatures {
   complexity: number;
 }
 
-const COMPLEX_INTENT_PATTERNS: ReadonlyArray<RegExp> = [
-  /\brefactor(?:ing)?\b/i,
-  /\barchitect(?:ure|ing)?\b/i,
-  /\bdesign\b/i,
-  /\bdebug(?:ging)?\b/i,
-  /\bmigrat(?:e|ion|ing)\b/i,
-  /\boptimi[sz]e\b/i,
-  /\bperformance\b/i,
-  /\bconcurren(?:cy|t)\b/i,
-  /\bthread[- ]?safety\b/i,
-  /\bsolid\b/i,
-  /\bcoverage\b/i,
-  /\breview\b/i,
-  /\btrace\b/i,
-  /\bprove\b/i,
-  /重构/,
-  /架构/,
-  /设计模式|设计/,
-  /调试/,
-  /迁移/,
-  /优化/,
-  /性能/,
-  /并发|多线程/,
-  /算法/,
-  /复杂度/,
-  /安全漏洞|安全审计/,
-  /覆盖率/,
-  /帮我审查|代码审查/,
-  /为什么|原理|底层/,
-];
+export interface ClassifyOptions {
+  /** Partial override merged onto {@link DEFAULT_CLASSIFIER_WEIGHTS}. */
+  weights?: Partial<ClassifierWeights>;
+  /** Replacement vocabulary; defaults to {@link DEFAULT_INTENT_LEXICON}. */
+  lexicon?: IntentLexicon;
+}
 
-const SIMPLE_INTENT_PATTERNS: ReadonlyArray<RegExp> = [
-  /\bformat(?:ting)?\b/i,
-  /\bindent(?:ation)?\b/i,
-  /\brename\b/i,
-  /\bcomment(?:s|ing)?\b/i,
-  /\bdocstring\b/i,
-  /\bspell(?:ing)?\b/i,
-  /\btypo\b/i,
-  /\badd\s+log(?:ging|s)?\b/i,
-  /格式化/,
-  /排版/,
-  /缩进/,
-  /改名|重命名/,
-  /加注释|补注释|写注释/,
-  /拼写|错别字/,
-  /加日志|打日志/,
-  /补全/,
-];
+const DEFAULT_COMPILED = compileLexicon(DEFAULT_INTENT_LEXICON);
 
 /** CJK ideographs are roughly one token each; latin text is ~4 chars/token. */
 const CJK_PATTERN = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/g;
+
+/** File extensions that, when mentioned, imply cross-file reasoning. */
+const MENTIONED_FILE_PATTERN =
+  /\b[\w./-]+\.(?:ts|tsx|js|jsx|py|go|rs|java|cs|rb|php|md)\b/g;
 
 export function estimateTokens(text: string): number {
   if (!text) {
@@ -96,45 +75,75 @@ export function estimateTokens(text: string): number {
   return Math.ceil(cjkCount + otherCount / 4);
 }
 
-function collectMatches(text: string, patterns: ReadonlyArray<RegExp>): string[] {
+function collectHits(
+  text: string,
+  patterns: ReadonlyArray<CompiledIntentPattern>
+): string[] {
   const hits: string[] = [];
   for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match) {
-      hits.push(match[0]);
+    if (pattern.regex.test(text)) {
+      hits.push(pattern.label);
     }
   }
   return hits;
 }
 
-export function classify(text: string, context: EditorContext = {}): RequestFeatures {
+function countStrength(
+  patterns: ReadonlyArray<CompiledIntentPattern>,
+  text: string,
+  strength: 'strong' | 'weak'
+): number {
+  let count = 0;
+  for (const pattern of patterns) {
+    if (pattern.strength === strength && pattern.regex.test(text)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+export function classify(
+  text: string,
+  context: EditorContext = {},
+  options: ClassifyOptions = {}
+): RequestFeatures {
   const prompt = text ?? '';
   const referenced = context.selectedText ?? context.fileText ?? '';
-  const estimatedTokens =
-    estimateTokens(prompt) + estimateTokens(referenced);
+  const estimatedTokens = estimateTokens(prompt) + estimateTokens(referenced);
 
   const fileCount = Math.max(1, context.fileCount ?? 1);
   const isMultiFile = fileCount > 1;
-  const mentionsOtherFiles = /\b[\w./-]+\.(?:ts|tsx|js|jsx|py|go|rs|java|cs|rb|php|md)\b/g;
-  const mentionedFiles = new Set(prompt.match(mentionsOtherFiles) ?? []);
+  const mentionedFiles = new Set(prompt.match(MENTIONED_FILE_PATTERN) ?? []);
   if (context.fileName) {
     mentionedFiles.delete(context.fileName);
   }
   const isCrossFile = mentionedFiles.size > 0 || isMultiFile;
 
-  const complexIntentHits = collectMatches(prompt, COMPLEX_INTENT_PATTERNS);
-  const simpleIntentHits = collectMatches(prompt, SIMPLE_INTENT_PATTERNS);
+  const lexicon: CompiledLexicon = options.lexicon
+    ? compileLexicon(options.lexicon)
+    : DEFAULT_COMPILED;
+  const weights = normaliseWeights(options.weights);
 
+  const complexIntentHits = collectHits(prompt, lexicon.complex);
+  const simpleIntentHits = collectHits(prompt, lexicon.simple);
   const hasComplexIntent = complexIntentHits.length > 0;
   const hasSimpleIntent = simpleIntentHits.length > 0;
 
-  const complexity = computeComplexity({
-    estimatedTokens,
-    isMultiFile,
-    isCrossFile,
-    hasComplexIntent,
-    hasSimpleIntent,
-  });
+  const strongComplex = countStrength(lexicon.complex, prompt, 'strong');
+  const weakComplex = countStrength(lexicon.complex, prompt, 'weak');
+
+  const complexity = computeComplexity(
+    {
+      estimatedTokens,
+      isMultiFile,
+      isCrossFile,
+      hasComplexIntent,
+      hasSimpleIntent,
+      strongComplex,
+      weakComplex,
+    },
+    weights
+  );
 
   return {
     estimatedTokens,
@@ -154,36 +163,51 @@ interface ComplexityInput {
   isCrossFile: boolean;
   hasComplexIntent: boolean;
   hasSimpleIntent: boolean;
+  strongComplex: number;
+  weakComplex: number;
 }
 
-/** Reference context window for the bundled local model. */
-const LOCAL_CONTEXT_TOKENS = 65536;
+/**
+ * How much repeated complex-intent hits amplify the base bonus. A single hit
+ * (strong or weak) yields 1 — i.e. the historical boolean behaviour — while
+ * several strong hits push towards {@link ClassifierWeights.maxIntentMultiplier}.
+ */
+function intentIntensity(input: ComplexityInput, weights: ClassifierWeights): number {
+  const raw = input.strongComplex + input.weakComplex * weights.weakIntentScale;
+  return Math.min(weights.maxIntentMultiplier, Math.max(1, raw));
+}
 
-function computeComplexity(input: ComplexityInput): number {
+function computeComplexity(
+  input: ComplexityInput,
+  weights: ClassifierWeights
+): number {
   // Start in the middle, then push towards 0 (local) or 1 (cloud).
-  let score = 0.5;
+  let score = weights.baseScore;
 
-  const tokenPressure = input.estimatedTokens / LOCAL_CONTEXT_TOKENS;
-  score += Math.min(0.3, tokenPressure * 10);
+  const tokenPressure = input.estimatedTokens / weights.localContextTokens;
+  score += Math.min(weights.tokenPressureCap, tokenPressure * weights.tokenPressureScale);
 
   if (input.isMultiFile) {
-    score += 0.12;
+    score += weights.multiFileBonus;
   }
   if (input.isCrossFile) {
-    score += 0.1;
+    score += weights.crossFileBonus;
   }
   if (input.hasComplexIntent) {
-    score += 0.3;
+    score += weights.complexIntentBonus * intentIntensity(input, weights);
   }
-  if (input.hasSimpleIntent) {
-    score -= 0.35;
+  // A cosmetic ask tacked onto a hard task ("refactor this and add comments")
+  // must not cancel the complexity signal, so the simple penalty only applies
+  // when nothing complex was detected at all.
+  if (input.hasSimpleIntent && !input.hasComplexIntent) {
+    score -= weights.simpleIntentPenalty;
   }
   if (
     input.hasSimpleIntent &&
     !input.hasComplexIntent &&
-    input.estimatedTokens < 2048
+    input.estimatedTokens < weights.smallSimpleTokenLimit
   ) {
-    score -= 0.15;
+    score -= weights.smallSimpleBonus;
   }
 
   return clamp01(score);

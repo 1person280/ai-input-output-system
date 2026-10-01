@@ -30,14 +30,20 @@ they run unmodified under Vitest in a bare Node process.
 | Module | Responsibility |
 | --- | --- |
 | `src/config/settings.ts` | The only place that knows VS Code configuration keys. |
-| `src/routing/requestClassifier.ts` | Pure `classify(text, context) -> RequestFeatures`. |
+| `src/routing/classifierWeights.ts` | Pure `ClassifierWeights` value object + clamping defaults. |
+| `src/routing/intentLexicon.ts` | Intent vocabulary as data (strong/weak) + compiled cache. |
+| `src/routing/requestClassifier.ts` | Pure `classify(text, context, options) -> RequestFeatures`. |
 | `src/routing/routingPolicy.ts` | Pure `decideRoute(features, threshold) -> 'local' \| 'cloud'`. |
+| `src/routing/decisionJournal.ts` | Pure append-only journal of decisions + user feedback. |
+| `src/routing/decisionQuality.ts` | Pure online quality + offline corpus confusion matrix. |
+| `src/routing/thresholdCalibration.ts` | Pure threshold sweep + coordinate-descent weight tuning. |
 | `src/routing/router.ts` | Orchestrates one request; owns cloud fallback. |
 | `src/local/localModelClient.ts` | HTTP client for `llama-server`. |
 | `src/local/modelManager.ts` | GGUF discovery + `llama-server` process lifecycle. |
 | `src/cloud/cloudClient.ts` | OpenAI-compatible `/v1/chat/completions` over `fetch`. |
 | `src/metrics/savingsLedger.ts` | Pure ledger + `savingsRatio()` + `snapshot()`. |
-| `src/metrics/metricsStore.ts` | Persists the ledger via `globalState`. |
+| `src/metrics/metricsStore.ts` | Persists the savings ledger via `globalState`. |
+| `src/metrics/decisionJournalStore.ts` | Persists the decision journal via `globalState`. |
 | `src/ui/*` | Status bar, webview dashboard, command registration. |
 
 ## Conventions

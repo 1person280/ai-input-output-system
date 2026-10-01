@@ -46,8 +46,8 @@ Details: [`docs/routing.md`](docs/routing.md) · [`docs/architecture.md`](docs/a
 
 ```bash
 npm install
-npm run package          # produces ai-input-output-system-0.1.0.vsix
-code --install-extension ai-input-output-system-0.1.0.vsix
+npm run package          # produces ai-input-output-system-0.2.0.vsix
+code --install-extension ai-input-output-system-0.2.0.vsix
 ```
 
 ### From source (development host)
@@ -76,6 +76,8 @@ llama-server -m models/Qwen3-4B-Instruct-Q8_0.gguf --ctx-size 65536 -ngl 99
 | `aiio.localModelPath` | string | `""` | Absolute path to the GGUF; empty means `<workspace>/models`. |
 | `aiio.routingThreshold` | number | `0.5` | Complexity above which requests go to the cloud. |
 | `aiio.enableLocalRouting` | boolean | `true` | Master switch; `false` sends everything to the cloud. |
+| `aiio.collectRoutingFeedback` | boolean | `true` | Ask for feedback after a locally answered prompt, feeding the decision-quality journal. |
+| `aiio.classifierWeights` | object | `{}` | Advanced: override classifier coefficients; unset keys keep the tuned defaults. |
 | `aiio.autonomousOnStartup` | boolean | `false` | Create files from `aiio.autonomousRequirement` on activation. |
 | `aiio.autonomousRequirement` | string | `""` | Requirement used for startup creation; empty disables it. |
 | `aiio.targetSubdirectory` | string | `aiio-generated` | Workspace-relative folder for generated files. |

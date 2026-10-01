@@ -3,6 +3,10 @@
  */
 
 import * as vscode from 'vscode';
+import {
+  ClassifierWeights,
+  normaliseWeights,
+} from '../routing/classifierWeights';
 import { DEFAULT_ROUTING_THRESHOLD, normaliseThreshold } from '../routing/routingPolicy';
 
 export interface CloudSettings {
@@ -19,6 +23,10 @@ export interface LocalSettings {
 export interface RoutingSettings {
   threshold: number;
   enableLocalRouting: boolean;
+  /** Ask for a thumbs-up/down after a local answer to feed decision quality. */
+  collectFeedback: boolean;
+  /** Tuned classifier coefficients; defaults are used when unset. */
+  weights: ClassifierWeights;
 }
 
 export interface AutonomousSettings {
@@ -68,6 +76,8 @@ export function readSettings(): ExtensionSettings {
         read('routingThreshold', DEFAULT_ROUTING_THRESHOLD)
       ),
       enableLocalRouting: read('enableLocalRouting', true),
+      collectFeedback: read('collectRoutingFeedback', true),
+      weights: normaliseWeights(read('classifierWeights', {})),
     },
     autonomous: {
       onStartup: read('autonomousOnStartup', false),

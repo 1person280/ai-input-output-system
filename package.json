@@ -2,7 +2,7 @@
   "name": "ai-input-output-system",
   "displayName": "AI Input/Output System",
   "description": "Local-first AI request routing for VS Code: answer simple prompts with a local 4B model, forward only complex work to the cloud.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "ai-input-output-system",
   "license": "MIT",
   "engines": {
@@ -90,6 +90,16 @@
           "type": "boolean",
           "default": true,
           "description": "When disabled every request goes to the cloud."
+        },
+        "aiio.collectRoutingFeedback": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ask for feedback after a locally answered prompt, feeding the decision-quality journal."
+        },
+        "aiio.classifierWeights": {
+          "type": "object",
+          "default": {},
+          "description": "Advanced: override classifier coefficients (baseScore, complexIntentBonus, simpleIntentPenalty, multiFileBonus, ...). Unset keys keep the tuned defaults."
         },
         "aiio.autonomousOnStartup": {
           "type": "boolean",

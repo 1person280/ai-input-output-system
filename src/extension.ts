@@ -12,7 +12,9 @@ import { CloudClient } from './cloud/cloudClient';
 import { onSettingsChanged, readSettings } from './config/settings';
 import { LocalModelClient } from './local/localModelClient';
 import { defaultModelDirectory, ModelManager } from './local/modelManager';
+import { DecisionJournalStore } from './metrics/decisionJournalStore';
 import { MetricsStore } from './metrics/metricsStore';
+import { computeOnlineQuality, OnlineQuality } from './routing/decisionQuality';
 import { Router } from './routing/router';
 import { registerCommands } from './ui/commands';
 import { getDashboardPanel } from './ui/dashboardPanel';
@@ -22,6 +24,7 @@ export function activate(context: vscode.ExtensionContext): void {
   let settings = readSettings();
 
   const metrics = new MetricsStore(context.globalState);
+  const journal = new DecisionJournalStore(context.globalState);
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   const models = new ModelManager(defaultModelDirectory(workspaceRoot));
   const statusBar = new StatusBarController();
@@ -38,10 +41,12 @@ export function activate(context: vscode.ExtensionContext): void {
         ? new LocalModelClient({ serverUrl: settings.local.serverUrl })
         : null,
       ledger: metrics,
+      journal,
       options: {
         threshold: settings.routing.threshold,
         enableLocalRouting: settings.routing.enableLocalRouting,
         fallbackToCloud: true,
+        weights: settings.routing.weights,
       },
     });
 
@@ -59,11 +64,14 @@ export function activate(context: vscode.ExtensionContext): void {
       workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri,
     });
 
+  const getRoutingQuality = (): OnlineQuality =>
+    computeOnlineQuality(journal.current.records(), journal.current.allFeedback());
+
   const refreshViews = (): void => {
     const ledger = metrics.current;
     const snapshot = ledger.snapshot();
     statusBar.update(snapshot);
-    getDashboardPanel()?.update(snapshot, ledger.allEntries());
+    getDashboardPanel()?.update(snapshot, ledger.allEntries(), getRoutingQuality());
   };
 
   registerCommands(context, {
@@ -72,6 +80,10 @@ export function activate(context: vscode.ExtensionContext): void {
     getSettings: () => settings,
     getRouter,
     getAutonomousCreator,
+    recordFeedback: async (requestId, verdict) => {
+      await journal.recordFeedback({ requestId, verdict, signal: 'explicit' });
+    },
+    getRoutingQuality,
     refreshViews,
   });
 
