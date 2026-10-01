@@ -17,6 +17,7 @@ function record(overrides: Partial<DecisionRecord> = {}): DecisionRecord {
     complexity: 0.2,
     threshold: 0.5,
     tokenEstimate: 100,
+    latencyMs: 800,
     ...overrides,
   };
 }

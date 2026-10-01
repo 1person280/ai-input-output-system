@@ -7,6 +7,7 @@
 
 import * as vscode from 'vscode';
 import type { LedgerEntry, LedgerSnapshot } from '../metrics/savingsLedger';
+import type { AdaptiveThreshold } from '../routing/adaptiveThreshold';
 import type { OnlineQuality } from '../routing/decisionQuality';
 import { escapeHtml } from './htmlEscape';
 import { renderRoutingQualitySection } from './routingQualitySection';
@@ -74,7 +75,8 @@ function renderRecent(entries: ReadonlyArray<LedgerEntry>): string {
 export function renderDashboardHtml(
   snapshot: LedgerSnapshot,
   recent: ReadonlyArray<LedgerEntry> = [],
-  quality: OnlineQuality | null = null
+  quality: OnlineQuality | null = null,
+  adaptive: AdaptiveThreshold | null = null
 ): string {
   const cards = [
     renderCard('Local share', percent(snapshot.savingsRatio), 'requests answered without the cloud'),
@@ -122,7 +124,7 @@ export function renderDashboardHtml(
   <h2>Request split</h2>
   ${renderSplitBar(snapshot)}
   <h2>Routing quality</h2>
-  ${renderRoutingQualitySection(quality)}
+  ${renderRoutingQualitySection(quality, adaptive)}
   <h2>Recent decisions</h2>
   ${renderRecent(recent)}
 </body>
@@ -153,12 +155,13 @@ export class DashboardPanel implements vscode.Disposable {
   update(
     snapshot: LedgerSnapshot,
     recent: ReadonlyArray<LedgerEntry> = [],
-    quality: OnlineQuality | null = null
+    quality: OnlineQuality | null = null,
+    adaptive: AdaptiveThreshold | null = null
   ): void {
     if (!this.panel) {
       return;
     }
-    this.panel.webview.html = renderDashboardHtml(snapshot, recent, quality);
+    this.panel.webview.html = renderDashboardHtml(snapshot, recent, quality, adaptive);
   }
 
   reveal(): void {

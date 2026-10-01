@@ -10,6 +10,7 @@ function recordInput(requestId: string) {
     complexity: 0.2,
     threshold: 0.5,
     tokenEstimate: 120,
+    latencyMs: 800,
   };
 }
 

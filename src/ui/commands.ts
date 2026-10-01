@@ -8,6 +8,7 @@ import { ExtensionSettings } from '../config/settings';
 import { buildDownloadCommand, ModelManager } from '../local/modelManager';
 import { MetricsStore } from '../metrics/metricsStore';
 import type { FeedbackVerdict } from '../routing/decisionJournal';
+import type { AdaptiveThreshold } from '../routing/adaptiveThreshold';
 import type { OnlineQuality } from '../routing/decisionQuality';
 import type { EditorContext } from '../routing/requestClassifier';
 import { Router } from '../routing/router';
@@ -30,6 +31,10 @@ export interface CommandServices {
   recordFeedback(requestId: string, verdict: FeedbackVerdict): void | Promise<void>;
   /** 当前的路由决策质量（在线指标），供仪表盘展示。 */
   getRoutingQuality(): OnlineQuality;
+  /** 当前的有效阈值（基准 + 自适应下调），供仪表盘展示。 */
+  getAdaptiveThreshold(): AdaptiveThreshold;
+  /** 立即重新探测本地服务健康状况（启停模型后调用）。 */
+  refreshLocalHealth(): Promise<void>;
   /** Re-render the status bar and dashboard after a mutation. */
   refreshViews(): void;
 }
@@ -175,9 +180,13 @@ async function manageModel(services: CommandServices): Promise<void> {
         port,
         contextTokens: status.spec.contextTokens,
       });
+      await services.refreshLocalHealth();
+      services.refreshViews();
       void vscode.window.showInformationMessage(`llama-server started (pid ${pid}).`);
     } else if (choice.label.includes('Stop')) {
       const stopped = services.models.stopServer();
+      await services.refreshLocalHealth();
+      services.refreshViews();
       void vscode.window.showInformationMessage(
         stopped ? 'llama-server stopped.' : 'No llama-server process was started by this window.'
       );
@@ -269,7 +278,8 @@ export function registerCommands(
       panel.update(
         ledger.snapshot(),
         ledger.allEntries(),
-        services.getRoutingQuality()
+        services.getRoutingQuality(),
+        services.getAdaptiveThreshold()
       );
     }),
     vscode.commands.registerCommand(MANAGE_MODEL_COMMAND, () =>

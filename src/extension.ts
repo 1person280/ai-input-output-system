@@ -11,10 +11,20 @@ import { AutonomousCreator } from './agent/autonomousCreator';
 import { CloudClient } from './cloud/cloudClient';
 import { onSettingsChanged, readSettings } from './config/settings';
 import { LocalModelClient } from './local/localModelClient';
+import { LocalHealthMonitor } from './local/localHealthMonitor';
 import { defaultModelDirectory, ModelManager } from './local/modelManager';
 import { DecisionJournalStore } from './metrics/decisionJournalStore';
 import { MetricsStore } from './metrics/metricsStore';
+import {
+  AdaptiveThreshold,
+  computeAdaptiveThreshold,
+  DEFAULT_ADAPTATION,
+} from './routing/adaptiveThreshold';
 import { computeOnlineQuality, OnlineQuality } from './routing/decisionQuality';
+import {
+  DEFAULT_LOCAL_CONDITION_OPTIONS,
+  estimateLocalLatency,
+} from './routing/localCondition';
 import { Router } from './routing/router';
 import { registerCommands } from './ui/commands';
 import { getDashboardPanel } from './ui/dashboardPanel';
@@ -29,6 +39,19 @@ export function activate(context: vscode.ExtensionContext): void {
   const models = new ModelManager(defaultModelDirectory(workspaceRoot));
   const statusBar = new StatusBarController();
   const output = vscode.window.createOutputChannel('AI I/O System');
+  // 健康监视器随 serverUrl 变化而重建；其余地方只读取它的缓存快照。
+  let health = createHealthMonitor(settings.local.serverUrl);
+
+  const computeAdaptive = (): AdaptiveThreshold =>
+    computeAdaptiveThreshold(
+      journal.current.records(),
+      journal.current.allFeedback(),
+      {
+        baseThreshold: settings.routing.threshold,
+        enabled: settings.routing.adaptiveRouting,
+        ...DEFAULT_ADAPTATION,
+      }
+    );
 
   const getRouter = (): Router =>
     new Router({
@@ -43,10 +66,23 @@ export function activate(context: vscode.ExtensionContext): void {
       ledger: metrics,
       journal,
       options: {
-        threshold: settings.routing.threshold,
+        threshold: computeAdaptive().effective,
         enableLocalRouting: settings.routing.enableLocalRouting,
         fallbackToCloud: true,
         weights: settings.routing.weights,
+        localCondition: () => ({
+          available: health.snapshot(),
+          ...estimateLocalLatency(journal.current.records()),
+        }),
+        localConditionOptions: {
+          ...DEFAULT_LOCAL_CONDITION_OPTIONS,
+          enabled: settings.routing.localHealthAware,
+        },
+        ensureLocalHealth: async (): Promise<void> => {
+          if (health.isStale()) {
+            await health.refresh();
+          }
+        },
       },
     });
 
@@ -71,7 +107,12 @@ export function activate(context: vscode.ExtensionContext): void {
     const ledger = metrics.current;
     const snapshot = ledger.snapshot();
     statusBar.update(snapshot);
-    getDashboardPanel()?.update(snapshot, ledger.allEntries(), getRoutingQuality());
+    getDashboardPanel()?.update(
+      snapshot,
+      ledger.allEntries(),
+      getRoutingQuality(),
+      computeAdaptive()
+    );
   };
 
   registerCommands(context, {
@@ -84,6 +125,10 @@ export function activate(context: vscode.ExtensionContext): void {
       await journal.recordFeedback({ requestId, verdict, signal: 'explicit' });
     },
     getRoutingQuality,
+    getAdaptiveThreshold: computeAdaptive,
+    refreshLocalHealth: async () => {
+      await health.refresh();
+    },
     refreshViews,
   });
 
@@ -93,13 +138,15 @@ export function activate(context: vscode.ExtensionContext): void {
     output,
     onSettingsChanged((next) => {
       settings = next;
+      // serverUrl 可能变化，按新配置重建健康监视器。
+      health = createHealthMonitor(settings.local.serverUrl);
       refreshViews();
     })
   );
 
   refreshViews();
 
-  void probeLocalServer(settings.local.serverUrl);
+  void probeLocalServer(health);
 
   if (settings.autonomous.onStartup && settings.autonomous.requirement.trim().length > 0) {
     void runStartupCreation(
@@ -125,11 +172,15 @@ async function runStartupCreation(
   }
 }
 
-async function probeLocalServer(serverUrl: string): Promise<void> {
-  const available = await new LocalModelClient({ serverUrl }).isAvailable();
+function createHealthMonitor(serverUrl: string): LocalHealthMonitor {
+  return new LocalHealthMonitor(new LocalModelClient({ serverUrl }));
+}
+
+async function probeLocalServer(health: LocalHealthMonitor): Promise<void> {
+  const available = await health.refresh();
   if (!available) {
     console.info(
-      `[aiio] No llama-server at ${serverUrl}. Simple prompts will fall back to the cloud until it is started.`
+      '[aiio] No llama-server detected. Local candidates are answered in the cloud until it is started.'
     );
   }
 }

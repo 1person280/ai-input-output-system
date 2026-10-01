@@ -46,8 +46,8 @@ Details: [`docs/routing.md`](docs/routing.md) · [`docs/architecture.md`](docs/a
 
 ```bash
 npm install
-npm run package          # produces ai-input-output-system-0.2.0.vsix
-code --install-extension ai-input-output-system-0.2.0.vsix
+npm run package          # produces ai-input-output-system-0.3.0.vsix
+code --install-extension ai-input-output-system-0.3.0.vsix
 ```
 
 ### From source (development host)
@@ -77,6 +77,8 @@ llama-server -m models/Qwen3-4B-Instruct-Q8_0.gguf --ctx-size 65536 -ngl 99
 | `aiio.routingThreshold` | number | `0.5` | Complexity above which requests go to the cloud. |
 | `aiio.enableLocalRouting` | boolean | `true` | Master switch; `false` sends everything to the cloud. |
 | `aiio.collectRoutingFeedback` | boolean | `true` | Ask for feedback after a locally answered prompt, feeding the decision-quality journal. |
+| `aiio.adaptiveRouting` | boolean | `true` | Lower the effective routing threshold from collected feedback. Only tightens (more cloud); never rises above `aiio.routingThreshold`. |
+| `aiio.localHealthAware` | boolean | `true` | Let local server availability and recently observed latency take part in the routing decision. |
 | `aiio.classifierWeights` | object | `{}` | Advanced: override classifier coefficients; unset keys keep the tuned defaults. |
 | `aiio.autonomousOnStartup` | boolean | `false` | Create files from `aiio.autonomousRequirement` on activation. |
 | `aiio.autonomousRequirement` | string | `""` | Requirement used for startup creation; empty disables it. |

@@ -31,6 +31,8 @@ export interface DecisionRecord {
   complexity: number;
   threshold: number;
   tokenEstimate: number;
+  /** 实际作答耗时（毫秒）；用于延迟感知路由，缺失或异常值按 0 处理。 */
+  latencyMs: number;
 }
 
 export interface DecisionFeedback {
@@ -82,6 +84,7 @@ function sanitiseRecord(raw: unknown): DecisionRecord | null {
     complexity: finiteOr(entry.complexity, 0),
     threshold: finiteOr(entry.threshold, 0),
     tokenEstimate: Math.max(0, finiteOr(entry.tokenEstimate, 0)),
+    latencyMs: Math.max(0, finiteOr(entry.latencyMs, 0)),
   };
 }
 

@@ -36,9 +36,12 @@ they run unmodified under Vitest in a bare Node process.
 | `src/routing/routingPolicy.ts` | Pure `decideRoute(features, threshold) -> 'local' \| 'cloud'`. |
 | `src/routing/decisionJournal.ts` | Pure append-only journal of decisions + user feedback. |
 | `src/routing/decisionQuality.ts` | Pure online quality + offline corpus confusion matrix. |
+| `src/routing/adaptiveThreshold.ts` | Pure effective threshold derived online from feedback (tighten-only). |
+| `src/routing/localCondition.ts` | Pure availability/latency gate applied on top of a base decision. |
 | `src/routing/thresholdCalibration.ts` | Pure threshold sweep + coordinate-descent weight tuning. |
 | `src/routing/router.ts` | Orchestrates one request; owns cloud fallback. |
 | `src/local/localModelClient.ts` | HTTP client for `llama-server`. |
+| `src/local/localHealthMonitor.ts` | TTL-cached `llama-server` health probe for routing gating. |
 | `src/local/modelManager.ts` | GGUF discovery + `llama-server` process lifecycle. |
 | `src/cloud/cloudClient.ts` | OpenAI-compatible `/v1/chat/completions` over `fetch`. |
 | `src/metrics/savingsLedger.ts` | Pure ledger + `savingsRatio()` + `snapshot()`. |
@@ -60,7 +63,15 @@ they run unmodified under Vitest in a bare Node process.
 User prompt ──▶ requestClassifier.classify ──▶ RequestFeatures
                                                 │
                                                 ▼
-                        routingPolicy.decideRoute (threshold)
+                    adaptiveThreshold.computeAdaptiveThreshold
+                    (journal feedback → effective threshold)
+                                                │
+                                                ▼
+                        routingPolicy.decideRoute (effective threshold)
+                                                │
+                                                ▼
+                     localCondition.applyLocalCondition (journal latency +
+                     LocalHealthMonitor availability → may divert to cloud)
                                                 │
                         ┌───────────────────────┴───────────────────────┐
                         ▼                                               ▼

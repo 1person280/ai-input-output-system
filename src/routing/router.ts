@@ -8,6 +8,11 @@ import { CloudClient, ChatMessage, CompletionResult, LlmClientError } from '../c
 import { LocalModelClient } from '../local/localModelClient';
 import { ClassifierWeights } from './classifierWeights';
 import { DecisionRecord, DecisionRecordInput } from './decisionJournal';
+import {
+  applyLocalCondition,
+  LocalCondition,
+  LocalConditionOptions,
+} from './localCondition';
 import { classify, EditorContext, RequestFeatures, RouteKind } from './requestClassifier';
 import { explainRoute, RouteDecision, RoutingPolicyOptions } from './routingPolicy';
 
@@ -25,6 +30,12 @@ export interface RouterOptions extends RoutingPolicyOptions {
   fallbackToCloud: boolean;
   /** Classifier coefficients; omitted means the tuned defaults. */
   weights?: Partial<ClassifierWeights>;
+  /** 本地状况提供者；每次预览时读取，便于健康探测刷新后立即生效。 */
+  localCondition?: () => LocalCondition;
+  /** 本地状况门控参数；与 {@link RouterOptions.localCondition} 一同提供才生效。 */
+  localConditionOptions?: LocalConditionOptions;
+  /** 执行前确保本地健康状况已刷新（缓存过期时触发探测）。 */
+  ensureLocalHealth?: () => Promise<void>;
 }
 
 export interface RouteOutcome {
@@ -87,12 +98,22 @@ export class Router {
   /** Pure preview used by the UI to explain a decision before executing it. */
   preview(prompt: string, context: EditorContext = {}): RoutePreview {
     const features = classify(prompt, context, { weights: this.deps.options.weights });
-    const decision = explainRoute(
+    const base = explainRoute(
       features,
       this.deps.options.threshold,
       this.deps.options.enableLocalRouting
     );
-    return { features, decision };
+    return { features, decision: this.applyLocalCondition(base) };
+  }
+
+  /** 叠加本地可用性 / 延迟门控；未配置时返回基础决策。 */
+  private applyLocalCondition(base: RouteDecision): RouteDecision {
+    const provider = this.deps.options.localCondition;
+    const options = this.deps.options.localConditionOptions;
+    if (!provider || !options) {
+      return base;
+    }
+    return applyLocalCondition(base, provider(), options);
   }
 
   async route(
@@ -101,6 +122,8 @@ export class Router {
     signal?: AbortSignal
   ): Promise<RouteOutcome> {
     const startedAt = Date.now();
+    // 缓存过期时先刷新健康探测，保证本次决策用的是最新可用性。
+    await this.deps.options.ensureLocalHealth?.();
     // The id is minted up front so the ledger, the journal and the UI all refer
     // to the same request.
     const requestId = nextRequestId();
@@ -130,6 +153,8 @@ export class Router {
       completion = await this.completeOnCloud(messages, signal);
     }
 
+    const latencyMs = Date.now() - startedAt;
+
     await this.deps.ledger.record(route, features.estimatedTokens);
     await this.deps.journal?.recordDecision({
       requestId,
@@ -139,6 +164,7 @@ export class Router {
       complexity: features.complexity,
       threshold: decision.threshold,
       tokenEstimate: features.estimatedTokens,
+      latencyMs,
     });
 
     return {
@@ -148,7 +174,7 @@ export class Router {
       features,
       decision: { ...decision, route },
       completion,
-      latencyMs: Date.now() - startedAt,
+      latencyMs,
     };
   }
 

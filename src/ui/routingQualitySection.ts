@@ -6,6 +6,7 @@
  * without scripts under a strict CSP.
  */
 
+import type { AdaptiveThreshold } from '../routing/adaptiveThreshold';
 import type { OnlineQuality } from '../routing/decisionQuality';
 import { escapeHtml } from './htmlEscape';
 
@@ -22,7 +23,10 @@ function card(label: string, value: string, hint: string): string {
     </div>`;
 }
 
-export function renderRoutingQualitySection(quality: OnlineQuality | null): string {
+export function renderRoutingQualitySection(
+  quality: OnlineQuality | null,
+  adaptive: AdaptiveThreshold | null = null
+): string {
   if (!quality || quality.decided === 0) {
     return '<p class="empty">No routing decisions recorded yet.</p>';
   }
@@ -48,7 +52,17 @@ export function renderRoutingQualitySection(quality: OnlineQuality | null): stri
       percent(quality.coverage),
       `${quality.withFeedback} of ${quality.decided} decisions`
     ),
-  ].join('');
+  ];
 
-  return `<div class="cards">${cards}</div>`;
+  if (adaptive) {
+    cards.push(
+      card(
+        'Effective threshold',
+        adaptive.effective.toFixed(2),
+        `base ${adaptive.base.toFixed(2)} · ${adaptive.reason}`
+      )
+    );
+  }
+
+  return `<div class="cards">${cards.join('')}</div>`;
 }

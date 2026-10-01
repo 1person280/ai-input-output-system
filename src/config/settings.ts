@@ -25,6 +25,10 @@ export interface RoutingSettings {
   enableLocalRouting: boolean;
   /** Ask for a thumbs-up/down after a local answer to feed decision quality. */
   collectFeedback: boolean;
+  /** 是否依据在线反馈自适应下调有效阈值（只收紧，不高于基准）。 */
+  adaptiveRouting: boolean;
+  /** 是否让本地服务可用性 / 延迟参与路由决策。 */
+  localHealthAware: boolean;
   /** Tuned classifier coefficients; defaults are used when unset. */
   weights: ClassifierWeights;
 }
@@ -77,6 +81,8 @@ export function readSettings(): ExtensionSettings {
       ),
       enableLocalRouting: read('enableLocalRouting', true),
       collectFeedback: read('collectRoutingFeedback', true),
+      adaptiveRouting: read('adaptiveRouting', true),
+      localHealthAware: read('localHealthAware', true),
       weights: normaliseWeights(read('classifierWeights', {})),
     },
     autonomous: {
