@@ -55,3 +55,53 @@ describe('LocalModelClient.complete (chat-completions)', () => {
     );
   });
 });
+
+describe('LocalModelClient.isAvailable', () => {
+  it('llama.cpp：/health 200 即可用，不再探测其他端点', async () => {
+    const probed: string[] = [];
+    vi.stubGlobal('fetch', async (url: string) => {
+      probed.push(String(url));
+      return new Response('OK', { status: 200 });
+    });
+    const client = new LocalModelClient({ serverUrl: 'http://127.0.0.1:8080' });
+
+    await expect(client.isAvailable()).resolves.toBe(true);
+    expect(probed).toHaveLength(1);
+    expect(probed[0]).toContain('/health');
+  });
+
+  it('Ollama：/health 404 时回退探测 /v1/models，200 判为可用', async () => {
+    const probed: string[] = [];
+    vi.stubGlobal('fetch', async (url: string) => {
+      probed.push(String(url));
+      if (String(url).includes('/health')) {
+        return new Response('404', { status: 404 });
+      }
+      return new Response(JSON.stringify({ data: [{ id: 'qwen2.5:0.5b' }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    const client = new LocalModelClient({ serverUrl: 'http://127.0.0.1:11434' });
+
+    await expect(client.isAvailable()).resolves.toBe(true);
+    expect(probed).toHaveLength(2);
+    expect(probed[1]).toContain('/v1/models');
+  });
+
+  it('两个端点都不可达时判为不可用', async () => {
+    vi.stubGlobal('fetch', async () => {
+      throw new Error('fetch failed');
+    });
+    const client = new LocalModelClient({ serverUrl: 'http://127.0.0.1:11434' });
+
+    await expect(client.isAvailable()).resolves.toBe(false);
+  });
+
+  it('两个端点都返回 404 时判为不可用', async () => {
+    vi.stubGlobal('fetch', async () => new Response('404', { status: 404 }));
+    const client = new LocalModelClient({ serverUrl: 'http://127.0.0.1:11434' });
+
+    await expect(client.isAvailable()).resolves.toBe(false);
+  });
+});

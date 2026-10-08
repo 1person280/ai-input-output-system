@@ -2,7 +2,7 @@
   "name": "ai-input-output-system",
   "displayName": "AI Input/Output System",
   "description": "Local-first AI request routing for VS Code: answer simple prompts with a local 4B model, forward only complex work to the cloud.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "ai-input-output-system",
   "license": "MIT",
   "engines": {
@@ -33,6 +33,24 @@
     "onStartupFinished"
   ],
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "aiio-explorer",
+          "title": "AI I/O",
+          "icon": "$(symbol-parameter)"
+        }
+      ]
+    },
+    "views": {
+      "aiio-explorer": [
+        {
+          "type": "webview",
+          "id": "aiio.chat",
+          "name": "AI 助手"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "aiio.routePrompt",
@@ -49,8 +67,40 @@
       {
         "command": "aiio.createFromRequirement",
         "title": "AI I/O: Create Files From Requirement"
+      },
+      {
+        "command": "aiio.configure",
+        "title": "AI I/O: Configure Cloud"
+      },
+      {
+        "command": "aiio.explainSelection",
+        "title": "AI I/O: 解释选区"
+      },
+      {
+        "command": "aiio.commentSelection",
+        "title": "AI I/O: 给选区加注释"
+      },
+      {
+        "command": "aiio.refactorSelection",
+        "title": "AI I/O: 重构选区"
       }
     ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "aiio.explainSelection",
+          "group": "aiio@1"
+        },
+        {
+          "command": "aiio.commentSelection",
+          "group": "aiio@2"
+        },
+        {
+          "command": "aiio.refactorSelection",
+          "group": "aiio@3"
+        }
+      ]
+    },
     "configuration": {
       "title": "AI Input/Output System",
       "properties": {

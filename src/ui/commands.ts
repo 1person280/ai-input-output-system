@@ -12,12 +12,17 @@ import type { AdaptiveThreshold } from '../routing/adaptiveThreshold';
 import type { OnlineQuality } from '../routing/decisionQuality';
 import type { EditorContext } from '../routing/requestClassifier';
 import { Router } from '../routing/router';
-import { showDashboardPanel } from './dashboardPanel';
+import { ActionKind, ACTION_PROMPTS } from './chatPanel';
+import { DashboardConnectionStatus, showDashboardPanel } from './dashboardPanel';
+import { runConfigureFlow } from './onboarding';
 import { SHOW_DASHBOARD_COMMAND } from './statusBar';
 
 export const ROUTE_PROMPT_COMMAND = 'aiio.routePrompt';
 export const MANAGE_MODEL_COMMAND = 'aiio.manageModel';
 export const CREATE_FROM_REQUIREMENT_COMMAND = 'aiio.createFromRequirement';
+export const EXPLAIN_SELECTION_COMMAND = 'aiio.explainSelection';
+export const COMMENT_SELECTION_COMMAND = 'aiio.commentSelection';
+export const REFACTOR_SELECTION_COMMAND = 'aiio.refactorSelection';
 export { SHOW_DASHBOARD_COMMAND };
 
 export interface CommandServices {
@@ -35,6 +40,10 @@ export interface CommandServices {
   getAdaptiveThreshold(): AdaptiveThreshold;
   /** 立即重新探测本地服务健康状况（启停模型后调用）。 */
   refreshLocalHealth(): Promise<void>;
+  /** 清空路由统计（仪表盘「重置统计」按钮）。 */
+  resetMetrics(): void | Promise<void>;
+  /** 探测云端端点与本地 llama-server 的可用性（仪表盘「测试连接」）。 */
+  testConnections(): Promise<DashboardConnectionStatus>;
   /** Re-render the status bar and dashboard after a mutation. */
   refreshViews(): void;
 }
@@ -236,6 +245,63 @@ async function createFromRequirement(services: CommandServices): Promise<void> {
   }
 }
 
+/**
+ * Editor context menu flow: run a selection-scoped action (解释/注释/重构)
+ * through the same router pipeline, then show the answer with its routing
+ * metadata. Falls back to a warning when nothing is selected.
+ */
+async function runSelectionAction(
+  services: CommandServices,
+  action: ActionKind
+): Promise<void> {
+  const editor = vscode.window.activeTextEditor;
+  const context = collectEditorContext(editor);
+  if (!context.selectedText) {
+    void vscode.window.showWarningMessage(
+      'AI I/O: 请先在编辑器中选中一段代码。'
+    );
+    return;
+  }
+  const prompt = ACTION_PROMPTS[action];
+  const router = services.getRouter();
+  const preview = router.preview(prompt, context);
+
+  try {
+    const outcome = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `AI I/O · ${action} 选区（${preview.decision.route} 模型）…`,
+        cancellable: true,
+      },
+      async (_progress, token) => {
+        const abort = new AbortController();
+        token.onCancellationRequested(() => abort.abort());
+        return router.route(prompt, context, abort.signal);
+      }
+    );
+
+    services.refreshViews();
+
+    const header = [
+      `# AI I/O · ${action}`,
+      '',
+      `- route: **${outcome.route}**${outcome.fallbackUsed ? ' (fallback from local)' : ''}`,
+      `- complexity: ${outcome.features.complexity.toFixed(2)} vs threshold ${outcome.decision.threshold.toFixed(2)}`,
+      `- reason: ${outcome.decision.reason}`,
+      `- est. tokens: ${outcome.features.estimatedTokens} · latency: ${outcome.latencyMs} ms`,
+      `- model: ${outcome.completion.model}`,
+      '',
+      '---',
+      '',
+    ].join('\n');
+
+    await showAnswer(`${header}${outcome.completion.text}\n`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    void vscode.window.showErrorMessage(`AI I/O selection action failed: ${message}`);
+  }
+}
+
 /** 打开刚生成的文件（拼接工作区根 + 目标子目录）。 */
 async function openCreatedFile(
   services: CommandServices,
@@ -273,7 +339,13 @@ export function registerCommands(
       routePrompt(services)
     ),
     vscode.commands.registerCommand(SHOW_DASHBOARD_COMMAND, () => {
-      const panel = showDashboardPanel();
+      const panel = showDashboardPanel({
+        resetMetrics: () => services.resetMetrics(),
+        testConnections: () => services.testConnections(),
+        configure: async () => {
+          await runConfigureFlow();
+        },
+      });
       const ledger = services.metrics.current;
       panel.update(
         ledger.snapshot(),
@@ -287,6 +359,15 @@ export function registerCommands(
     ),
     vscode.commands.registerCommand(CREATE_FROM_REQUIREMENT_COMMAND, () =>
       createFromRequirement(services)
+    ),
+    vscode.commands.registerCommand(EXPLAIN_SELECTION_COMMAND, () =>
+      runSelectionAction(services, 'explain')
+    ),
+    vscode.commands.registerCommand(COMMENT_SELECTION_COMMAND, () =>
+      runSelectionAction(services, 'comment')
+    ),
+    vscode.commands.registerCommand(REFACTOR_SELECTION_COMMAND, () =>
+      runSelectionAction(services, 'refactor')
     )
   );
 }

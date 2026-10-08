@@ -50,16 +50,38 @@ export class LocalModelClient {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
-  /** Cheap liveness probe used before routing a request locally. */
+  /**
+   * Cheap liveness probe used before routing a request locally.
+   *
+   * llama.cpp exposes `/health`; Ollama does not (404), so fall back to
+   * `GET /v1/models` when `/health` is missing. Any 2xx on either endpoint
+   * means a usable OpenAI-compatible server is listening.
+   */
   async isAvailable(signal?: AbortSignal): Promise<boolean> {
+    const healthOk = await this.probe(`${this.serverUrl}/health`, signal);
+    if (healthOk !== null) {
+      return healthOk;
+    }
+    // /health 未命中（404/405）→ 可能是 Ollama，改探 /v1/models。
+    return (await this.probe(`${this.serverUrl}/v1/models`, signal)) ?? false;
+  }
+
+  /** Returns true/false on a definitive answer, null when the path is absent. */
+  private async probe(url: string, signal?: AbortSignal): Promise<boolean | null> {
     try {
       const response = await fetchWithTimeout(
-        `${this.serverUrl}/health`,
+        url,
         { method: 'GET' },
         2_000,
         signal
       );
-      return response.ok;
+      if (response.ok) {
+        return true;
+      }
+      if (response.status === 404 || response.status === 405) {
+        return null;
+      }
+      return false;
     } catch {
       return false;
     }

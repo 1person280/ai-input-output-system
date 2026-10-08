@@ -29,6 +29,25 @@ prompt ──▶ classify(text, context) ──▶ RequestFeatures.complexity
                                    status bar + dashboard
 ```
 
+## What you can do with it (v0.4)
+
+- **Sidebar AI assistant** — open the `AI I/O` view in the activity bar and
+  chat directly. Every reply shows its route badge (local/cloud, complexity vs
+  threshold, latency, model) and can be inserted at the cursor, replace the
+  selection, or copied. Quick actions (解释选区 / 加注释 / 重构选区) run the
+  current editor selection through the same pipeline.
+- **Editor right-click actions** — select code, then
+  *AI I/O: 解释选区 / 给选区加注释 / 重构选区*.
+- **First-run onboarding** — if no cloud endpoint is reachable, the extension
+  offers to configure one (`AI I/O: Configure Cloud`): pick Ollama, OpenAI, or
+  any custom OpenAI-compatible URL, choose from the models the endpoint
+  advertises, and save to workspace or user settings.
+- **Works without an API key** — local OpenAI-compatible endpoints on
+  localhost (Ollama at `http://localhost:11434/v1`, llama.cpp, LM Studio) need
+  no key at all.
+- **Interactive dashboard** — test cloud/local connectivity, reconfigure, open
+  settings, and reset the ledger right from the savings dashboard.
+
 1. **Classify** — token estimate (CJK-aware), multi/cross-file detection, and
    complex/simple intent keywords produce a `complexity` score in `[0, 1]`.
 2. **Decide** — `decideRoute(features, threshold)` is a pure function; below the
