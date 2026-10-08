@@ -1,164 +1,173 @@
 # AI Input/Output System
 
-> A VS Code extension that answers simple AI requests with a **local 4B INT8 model**
-> and forwards only genuinely complex work to the cloud — then shows you exactly how
-> many cloud calls you avoided.
+> 一个 VS Code 扩展：**所有 AI 请求都先经过本地 Ollama 模型**，由本地模型自主
+> 判断能否胜任——简单请求直接回答，复杂请求主动输出求助标记，由云端专家只回答
+> 本地拆解出的子问题，最后仍由本地整合成最终回复。全程展示省下的云端调用量。
 
-## Why
+## 为什么
 
-Every keystroke-sized AI question ("format this", "add a docstring", "rename this
-variable") costs a cloud round-trip. A 4B INT8 model with a 64K context window
-handles those comfortably on-device. This extension sits in front of your AI
-workflow, classifies each request, routes it, and keeps a running tally of the
-savings.
+每个 AI 问题（"格式化这段代码"、"加个注释"、"重命名变量"）都打到云端，既慢又
+花钱。本地模型（如 Qwen3 4B，64K 上下文）完全能在本机处理大多数请求。本扩展
+让本地模型站在你 AI 工作流的最前面：它自己决定什么时候需要专家，而不是靠外部
+规则替它做选择。
 
-## How it works — local routing
+## 工作原理 —— 本地先行，专家按需介入
 
 ```
-prompt ──▶ classify(text, context) ──▶ RequestFeatures.complexity
-                                              │
-                        ┌─────────────────────┴─────────────────────┐
-             complexity < threshold                       complexity >= threshold
-                        ▼                                          ▼
-              llama-server (local 4B)                    OpenAI-compatible cloud
-                        │  on failure ▼                            │
-                        └────────────▶ cloud fallback ◀────────────┘
-                                              │
-                                  ledger.record(route, tokens)
-                                              │
-                                   status bar + dashboard
+prompt ──▶ 本地 Ollama（附升级协议提示词）
+                │
+      ┌─────────┴──────────┐
+   直接回答            输出 [ESCALATE] + 子问题
+      │                        │
+      │                        ▼
+      │              云端专家只回答子问题
+      │                        │
+      │                        ▼
+      │              本地整合子问题答案，产出最终回复
+      │                        │
+      └────────────┬───────────┘
+                   ▼
+        ledger.record(route, tokens)
+                   │
+         状态栏 + 仪表盘
 ```
 
-## What you can do with it (v0.4)
+三种实际去向（`RouteKind`）：
 
-- **Sidebar AI assistant** — open the `AI I/O` view in the activity bar and
-  chat directly. Every reply shows its route badge (local/cloud, complexity vs
-  threshold, latency, model) and can be inserted at the cursor, replace the
-  selection, or copied. Quick actions (解释选区 / 加注释 / 重构选区) run the
-  current editor selection through the same pipeline.
-- **Editor right-click actions** — select code, then
-  *AI I/O: 解释选区 / 给选区加注释 / 重构选区*.
-- **First-run onboarding** — if no cloud endpoint is reachable, the extension
-  offers to configure one (`AI I/O: Configure Cloud`): pick Ollama, OpenAI, or
-  any custom OpenAI-compatible URL, choose from the models the endpoint
-  advertises, and save to workspace or user settings.
-- **Works without an API key** — local OpenAI-compatible endpoints on
-  localhost (Ollama at `http://localhost:11434/v1`, llama.cpp, LM Studio) need
-  no key at all.
-- **Interactive dashboard** — test cloud/local connectivity, reconfigure, open
-  settings, and reset the ledger right from the savings dashboard.
+| 路由 | 含义 |
+| --- | --- |
+| `local` | 本地模型直接回答，云端零参与 |
+| `escalated` | 本地模型求助：云端只回答本地拆出的子问题，本地整合 |
+| `cloud` | 本地服务不可用或出错时，整个请求降级直连云端兜底 |
 
-1. **Classify** — token estimate (CJK-aware), multi/cross-file detection, and
-   complex/simple intent keywords produce a `complexity` score in `[0, 1]`.
-2. **Decide** — `decideRoute(features, threshold)` is a pure function; below the
-   threshold the request stays local.
-3. **Execute** — local requests hit `llama-server`; failures fall back to the
-   cloud so you never lose an answer.
-4. **Measure** — every decision is appended to a ledger that feeds the status bar
-   and the dashboard.
+关键点：
 
-Details: [`docs/routing.md`](docs/routing.md) · [`docs/architecture.md`](docs/architecture.md) · [`docs/model.md`](docs/model.md) · [`docs/agent.md`](docs/agent.md).
+1. **本地模型自判**——升级协议通过 system 提示词注入：复杂任务（大型重构、
+   架构、跨文件改动、疑难调试）时不要瞎猜，输出一行 `[ESCALATE]` 加一个让
+   远程专家能用最小上下文回答的聚焦子问题。
+2. **云端只答子问题**——专家收到的是本地模型拆解后的聚焦问题，不是原始完整
+   请求，token 消耗最小化。
+3. **本地整合**——子问题答案回传后，本地模型结合它对原始请求的理解给出最终
+   回复。
+4. **永远有答案**——本地服务挂掉时自动降级到云端，不会丢回答。
 
-## Install
+统计特征（复杂度评分、意图关键词等）仍由 `requestClassifier` 计算，但只用于
+报表分析，不再决定流量去向——决定权在本地模型手里。
 
-### From a VSIX
+详情：[`docs/routing.md`](docs/routing.md) · [`docs/architecture.md`](docs/architecture.md) · [`docs/model.md`](docs/model.md) · [`docs/agent.md`](docs/agent.md)。
+
+## 功能（v0.4）
+
+- **侧边栏 AI 助手**——在活动栏打开 `AI I/O` 视图直接对话。每条回复显示路由
+  徽章（`local` / `local+专家`（含子问题摘要）/ `cloud`）、复杂度、耗时与模型，
+  可插入光标处、替换选区或复制。快速动作（解释选区 / 加注释 / 重构选区）走
+  同一条管线。
+- **编辑器右键动作**——选中代码后执行 *AI I/O: 解释选区 / 给选区加注释 /
+  重构选区*。
+- **首次运行引导**——云端端点不可达时提供配置向导（`AI I/O: Configure Cloud`）：
+  可选 Ollama、OpenAI 或任意 OpenAI 兼容地址，并列出端点提供的模型。
+- **无需 API Key**——本地 OpenAI 兼容端点（`http://localhost:11434/v1` 的
+  Ollama、llama.cpp、LM Studio）完全不需要密钥。
+- **交互式仪表盘**——测试云端/本地连通性、重新配置、打开设置、清空统计。
+- **自动 Ollama 检测**——配置的本地端点不可达且 Ollama 正在运行时，自动改写
+  `localServerUrl` 为 Ollama 端口；未安装时引导一键启动/下载。
+
+## 安装
+
+### 从 VSIX
 
 ```bash
 npm install
-npm run package          # produces ai-input-output-system-0.3.0.vsix
-code --install-extension ai-input-output-system-0.3.0.vsix
+npm run package          # 生成 ai-input-output-system-0.4.0.vsix
+code --install-extension ai-input-output-system-0.4.0.vsix
 ```
 
-### From source (development host)
+### 从源码（开发调试）
 
 ```bash
 npm install
 npm run compile
-# press F5 in VS Code to launch an Extension Development Host
+# 在 VS Code 中按 F5 启动 Extension Development Host
 ```
 
-The local model is **not** bundled. Download it and start the server:
+本地模型**不随扩展打包**。需要先安装 Ollama（`https://ollama.com/download`）
+或手动启动 llama-server：
 
 ```bash
 node scripts/download-model.mjs --url <mirror-url> --sha256 <hex>
 llama-server -m models/Qwen3-4B-Instruct-Q8_0.gguf --ctx-size 65536 -ngl 99
 ```
 
-## Configuration
+## 配置
 
-| Setting | Type | Default | Description |
+| 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `aiio.cloudBaseUrl` | string | `https://api.openai.com/v1` | OpenAI-compatible base URL for cloud requests. |
-| `aiio.cloudApiKey` | string | `""` | API key for the cloud endpoint. |
-| `aiio.cloudModel` | string | `gpt-4o-mini` | Model name sent to the cloud. |
-| `aiio.localServerUrl` | string | `http://127.0.0.1:8080` | Base URL of the running `llama-server`. |
-| `aiio.localModelPath` | string | `""` | Absolute path to the GGUF; empty means `<workspace>/models`. |
-| `aiio.routingThreshold` | number | `0.5` | Complexity above which requests go to the cloud. |
-| `aiio.enableLocalRouting` | boolean | `true` | Master switch; `false` sends everything to the cloud. |
-| `aiio.collectRoutingFeedback` | boolean | `true` | Ask for feedback after a locally answered prompt, feeding the decision-quality journal. |
-| `aiio.adaptiveRouting` | boolean | `true` | Lower the effective routing threshold from collected feedback. Only tightens (more cloud); never rises above `aiio.routingThreshold`. |
-| `aiio.localHealthAware` | boolean | `true` | Let local server availability and recently observed latency take part in the routing decision. |
-| `aiio.classifierWeights` | object | `{}` | Advanced: override classifier coefficients; unset keys keep the tuned defaults. |
-| `aiio.autonomousOnStartup` | boolean | `false` | Create files from `aiio.autonomousRequirement` on activation. |
-| `aiio.autonomousRequirement` | string | `""` | Requirement used for startup creation; empty disables it. |
-| `aiio.targetSubdirectory` | string | `aiio-generated` | Workspace-relative folder for generated files. |
+| `aiio.cloudBaseUrl` | string | `https://api.openai.com/v1` | 云端请求使用的 OpenAI 兼容 base URL。 |
+| `aiio.cloudApiKey` | string | `""` | 云端端点的 API key。 |
+| `aiio.cloudModel` | string | `gpt-4o-mini` | 云端使用的模型名。 |
+| `aiio.localServerUrl` | string | `http://127.0.0.1:8080` | 本地服务地址（Ollama 通常为 `http://127.0.0.1:11434`）。 |
+| `aiio.localModelPath` | string | `""` | 本地 GGUF 模型绝对路径；留空表示 `<workspace>/models`。 |
+| `aiio.escalationEnabled` | boolean | `true` | 允许本地模型向云端专家求助（`[ESCALATE]` 协议）；关闭后本地答不好也不再升级。 |
+| `aiio.enableLocalRouting` | boolean | `true` | 总开关；`false` 时所有请求直接走云端。 |
+| `aiio.collectRoutingFeedback` | boolean | `true` | 本地回答后请求反馈，用于决策质量统计。 |
+| `aiio.localHealthAware` | boolean | `true` | 让本地服务可用性 / 延迟参与降级判断。 |
+| `aiio.classifierWeights` | object | `{}` | 高级：覆盖分类器系数（仅影响统计特征）。 |
+| `aiio.autonomousOnStartup` | boolean | `false` | 激活时根据 `aiio.autonomousRequirement` 自动创建文件。 |
+| `aiio.autonomousRequirement` | string | `""` | 启动创建用的自然语言需求；留空禁用。 |
+| `aiio.targetSubdirectory` | string | `aiio-generated` | 生成文件落盘的工作区相对目录。 |
 
-## Commands
+## 命令
 
-| Command | ID | What it does |
+| 命令 | ID | 作用 |
 | --- | --- | --- |
-| AI I/O: Route Prompt (Local or Cloud) | `aiio.routePrompt` | Asks for a prompt, shows the routing decision, and returns the answer. |
-| AI I/O: Show Savings Dashboard | `aiio.showDashboard` | Opens the webview dashboard (also bound to the status bar). |
-| AI I/O: Manage Local Model | `aiio.manageModel` | Inspect / download / start / stop the local model. |
-| AI I/O: Create Files From Requirement | `aiio.createFromRequirement` | Turn a natural-language requirement into files in the workspace. |
+| AI I/O: Route Prompt | `aiio.routePrompt` | 输入提示词，经本地模型（必要时升级专家）返回答案。 |
+| AI I/O: Show Savings Dashboard | `aiio.showDashboard` | 打开节省仪表盘（状态栏也可点击）。 |
+| AI I/O: Manage Local Model | `aiio.manageModel` | 查看 / 下载 / 启动 / 停止本地模型。 |
+| AI I/O: Create Files From Requirement | `aiio.createFromRequirement` | 把自然语言需求变成工作区里的文件。 |
 
-## How the savings are computed
+## 节省量怎么算
 
-Each routed request appends one ledger entry:
+每个请求往账本追加一条记录：
 
 ```ts
-{ timestamp: number, route: 'local' | 'cloud', estimatedTokens: number }
+{ timestamp: number, route: 'local' | 'escalated' | 'cloud', estimatedTokens: number }
 ```
 
-From the ledger:
+统计口径：
 
-| Metric | Formula |
+| 指标 | 公式 |
 | --- | --- |
-| `savingsRatio()` | `local requests ÷ total requests` |
-| `tokenSavingsRatio()` | `local tokens ÷ total tokens` |
-| `estimatedCloudCostAvoidedUsd` | `localTokens ÷ 1000 × 0.002` (configurable per-1K-token price) |
+| `savingsRatio()` | `local 请求数 ÷ 总请求数`（仅完全未触云的请求） |
+| `tokenSavingsRatio()` | `local tokens ÷ 总 tokens` |
+| `estimatedCloudCostAvoidedUsd` | `localTokens ÷ 1000 × 0.002`（单价可配） |
 
-Fallbacks are recorded with the **actual** route (`cloud`), so a failed local
-attempt never inflates the savings. Token counts are estimates: CJK characters
-are counted as one token each, everything else at ~4 characters per token.
+`escalated` 请求按实际云端参与计入云端流量；本地失败降级（`cloud`）同样按
+实际路由记录，虚高的节省不会被记进去。token 数为估算值：中日韩字符按 1 个
+token 计，其余约 4 字符 1 token。
 
-## Autonomous file creation
+## 自主文件创建
 
-Give the extension a requirement in plain language and it writes the files
-itself. Planning tries three sources in order — **local model → cloud model →
-offline heuristic** — then persists the result into
-`<workspace>/<aiio.targetSubdirectory>`. The offline heuristic is a real
-fallback: it infers the file name from the requirement and embeds the
-requirement text into a type-appropriate skeleton, so a file is always produced
-even with no local server and no cloud key. See
-[`docs/agent.md`](docs/agent.md) for the full flow and how to verify it.
+用自然语言描述需求，扩展自己写文件。规划依次尝试三个来源——**本地模型 →
+云端模型 → 离线启发式**——然后把结果写入
+`<workspace>/<aiio.targetSubdirectory>`。离线启发式是真实兜底：从需求推断
+文件名并嵌入类型合适的骨架，即使没有本地服务和云端 key 也一定产出文件。
+完整流程见 [`docs/agent.md`](docs/agent.md)。
 
-## Development
+## 开发
 
 ```bash
-npm install        # install dev dependencies
-npm run compile    # esbuild bundle -> dist/extension.js
-npm run watch      # rebuild on change
+npm install        # 安装开发依赖
+npm run compile    # esbuild 打包 -> dist/extension.js
+npm run watch      # 变更时重新打包
 npm run typecheck  # tsc --noEmit
 npm run lint       # eslint src
 npm test           # vitest run
-npm run package    # build a .vsix via @vscode/vsce
+npm run package    # 通过 @vscode/vsce 构建 .vsix
 ```
 
-Architecture rules enforced by review: each source file stays **under 600 lines**,
-file names are **semantic** (no `utils.ts` / `common.ts` / `helpers.ts`), and the
-dependency direction is one-way (`ui → routing/metrics → local/cloud`) with the
-domain layer free of `vscode` imports.
+代码评审强制执行的架构规则：每个源文件**不超过 600 行**，文件名**语义化**
+（禁止 `utils.ts` / `common.ts` / `helpers.ts`），依赖方向单向
+（`ui → routing/metrics → local/cloud`），领域层不 import `vscode`。
 
 ## License
 

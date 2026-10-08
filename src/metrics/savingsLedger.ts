@@ -41,7 +41,7 @@ function sanitiseEntry(entry: LedgerEntry): LedgerEntry | null {
   if (!entry || typeof entry !== 'object') {
     return null;
   }
-  if (entry.route !== 'local' && entry.route !== 'cloud') {
+  if (entry.route !== 'local' && entry.route !== 'escalated' && entry.route !== 'cloud') {
     return null;
   }
   const tokens = Number(entry.estimatedTokens);
@@ -97,7 +97,7 @@ export class SavingsLedger {
     return this.records.length;
   }
 
-  /** Share of requests answered locally. Zero when nothing was recorded. */
+  /** Share of requests answered without any cloud involvement. Zero when empty. */
   savingsRatio(): number {
     if (this.records.length === 0) {
       return 0;

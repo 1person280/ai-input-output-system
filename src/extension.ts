@@ -20,16 +20,7 @@ import { LocalHealthMonitor } from './local/localHealthMonitor';
 import { defaultModelDirectory, ModelManager } from './local/modelManager';
 import { DecisionJournalStore } from './metrics/decisionJournalStore';
 import { MetricsStore } from './metrics/metricsStore';
-import {
-  AdaptiveThreshold,
-  computeAdaptiveThreshold,
-  DEFAULT_ADAPTATION,
-} from './routing/adaptiveThreshold';
 import { computeOnlineQuality, OnlineQuality } from './routing/decisionQuality';
-import {
-  DEFAULT_LOCAL_CONDITION_OPTIONS,
-  estimateLocalLatency,
-} from './routing/localCondition';
 import { Router } from './routing/router';
 import { registerCommands } from './ui/commands';
 import { AiChatPanelProvider, ChatConnectionStatus, ChatRouterOverride } from './ui/chatPanel';
@@ -52,19 +43,8 @@ export function activate(context: vscode.ExtensionContext): void {
   // 健康监视器随 serverUrl 变化而重建；其余地方只读取它的缓存快照。
   let health = createHealthMonitor(settings.local.serverUrl);
 
-  const computeAdaptive = (): AdaptiveThreshold =>
-    computeAdaptiveThreshold(
-      journal.current.records(),
-      journal.current.allFeedback(),
-      {
-        baseThreshold: settings.routing.threshold,
-        enabled: settings.routing.adaptiveRouting,
-        ...DEFAULT_ADAPTATION,
-      }
-    );
-
   const getRouter = (override?: ChatRouterOverride): Router => {
-    // 会话级覆盖仅影响聊天面板的请求：cloud 模式强制走云端，model 换默认模型。
+    // 会话级覆盖仅影响聊天面板的请求：cloud 模式跳过本地直连云端，model 换默认模型。
     const forceCloud = override?.routeMode === 'cloud';
     const model = override?.model ?? settings.cloud.model;
     return new Router({
@@ -73,30 +53,13 @@ export function activate(context: vscode.ExtensionContext): void {
         apiKey: settings.cloud.apiKey,
         model,
       }),
-      local:
-        settings.routing.enableLocalRouting && !forceCloud
-          ? new LocalModelClient({ serverUrl: settings.local.serverUrl })
-          : null,
+      local: forceCloud ? null : new LocalModelClient({ serverUrl: settings.local.serverUrl }),
       ledger: metrics,
       journal,
       options: {
-        threshold: computeAdaptive().effective,
-        enableLocalRouting: settings.routing.enableLocalRouting && !forceCloud,
+        escalationEnabled: settings.routing.escalationEnabled,
         fallbackToCloud: true,
         weights: settings.routing.weights,
-        localCondition: () => ({
-          available: health.snapshot(),
-          ...estimateLocalLatency(journal.current.records()),
-        }),
-        localConditionOptions: {
-          ...DEFAULT_LOCAL_CONDITION_OPTIONS,
-          enabled: settings.routing.localHealthAware,
-        },
-        ensureLocalHealth: async (): Promise<void> => {
-          if (health.isStale()) {
-            await health.refresh();
-          }
-        },
       },
     });
   };
@@ -125,8 +88,7 @@ export function activate(context: vscode.ExtensionContext): void {
     getDashboardPanel()?.update(
       snapshot,
       ledger.allEntries(),
-      getRoutingQuality(),
-      computeAdaptive()
+      getRoutingQuality()
     );
   };
 
@@ -221,7 +183,6 @@ export function activate(context: vscode.ExtensionContext): void {
       await journal.recordFeedback({ requestId, verdict, signal: 'explicit' });
     },
     getRoutingQuality,
-    getAdaptiveThreshold: computeAdaptive,
     refreshLocalHealth: async () => {
       await health.refresh();
     },

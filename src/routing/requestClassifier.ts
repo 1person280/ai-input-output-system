@@ -22,7 +22,13 @@ import {
   IntentLexicon,
 } from './intentLexicon';
 
-export type RouteKind = 'local' | 'cloud';
+/**
+ * 一次请求的实际去向：
+ * - `local`：本地模型直接回答；
+ * - `escalated`：本地模型求助，云端专家回答子问题、本地整合；
+ * - `cloud`：本地不可用/出错时整个请求直接走云端兜底。
+ */
+export type RouteKind = 'local' | 'escalated' | 'cloud';
 
 export interface EditorContext {
   /** Name of the active file, used only for logging / heuristics. */

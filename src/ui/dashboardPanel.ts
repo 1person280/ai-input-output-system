@@ -10,7 +10,6 @@
 
 import * as vscode from 'vscode';
 import type { LedgerEntry, LedgerSnapshot } from '../metrics/savingsLedger';
-import type { AdaptiveThreshold } from '../routing/adaptiveThreshold';
 import type { OnlineQuality } from '../routing/decisionQuality';
 import { renderRoutingQualitySection } from './routingQualitySection';
 
@@ -46,7 +45,6 @@ export interface DashboardState {
   snapshot: LedgerSnapshot;
   recent: ReadonlyArray<LedgerEntry>;
   quality: OnlineQuality | null;
-  adaptive: AdaptiveThreshold | null;
   /** Pre-rendered "routing quality" block (server-side, testable). */
   qualityHtml: string;
   /** Last connection probe result, or null before the first test. */
@@ -57,15 +55,13 @@ function toDashboardState(
   snapshot: LedgerSnapshot,
   recent: ReadonlyArray<LedgerEntry>,
   quality: OnlineQuality | null,
-  adaptive: AdaptiveThreshold | null,
   connections: DashboardConnectionStatus | null
 ): DashboardState {
   return {
     snapshot,
     recent: recent.slice(-RECENT_LIMIT),
     quality,
-    adaptive,
-    qualityHtml: renderRoutingQualitySection(quality, adaptive),
+    qualityHtml: renderRoutingQualitySection(quality),
     connections,
   };
 }
@@ -105,15 +101,14 @@ export class DashboardPanel implements vscode.Disposable {
   update(
     snapshot: LedgerSnapshot,
     recent: ReadonlyArray<LedgerEntry> = [],
-    quality: OnlineQuality | null = null,
-    adaptive: AdaptiveThreshold | null = null
+    quality: OnlineQuality | null = null
   ): void {
     if (!this.panel) {
       return;
     }
     void this.panel.webview.postMessage({
       type: 'state',
-      state: toDashboardState(snapshot, recent, quality, adaptive, this.connections),
+      state: toDashboardState(snapshot, recent, quality, this.connections),
     });
   }
 

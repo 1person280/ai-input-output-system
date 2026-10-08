@@ -23,10 +23,10 @@ export interface LocalSettings {
 export interface RoutingSettings {
   threshold: number;
   enableLocalRouting: boolean;
+  /** 本地模型是否可以向云端专家求助（[ESCALATE] 协议）。 */
+  escalationEnabled: boolean;
   /** Ask for a thumbs-up/down after a local answer to feed decision quality. */
   collectFeedback: boolean;
-  /** 是否依据在线反馈自适应下调有效阈值（只收紧，不高于基准）。 */
-  adaptiveRouting: boolean;
   /** 是否让本地服务可用性 / 延迟参与路由决策。 */
   localHealthAware: boolean;
   /** Tuned classifier coefficients; defaults are used when unset. */
@@ -80,8 +80,8 @@ export function readSettings(): ExtensionSettings {
         read('routingThreshold', DEFAULT_ROUTING_THRESHOLD)
       ),
       enableLocalRouting: read('enableLocalRouting', true),
+      escalationEnabled: read('escalationEnabled', true),
       collectFeedback: read('collectRoutingFeedback', true),
-      adaptiveRouting: read('adaptiveRouting', true),
       localHealthAware: read('localHealthAware', true),
       weights: normaliseWeights(read('classifierWeights', {})),
     },

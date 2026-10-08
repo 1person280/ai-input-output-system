@@ -211,9 +211,6 @@ export class AiChatPanelProvider implements vscode.WebviewViewProvider {
     };
     const router = this.services.getRouter(override);
     try {
-      const preview = router.preview(prompt, context);
-      this.post({ type: 'preview', id, route: preview.decision.route });
-
       const outcome = await router.route(prompt, context);
       this.replies.set(id, { text: outcome.completion.text });
       this.services.refreshViews();
@@ -222,10 +219,8 @@ export class AiChatPanelProvider implements vscode.WebviewViewProvider {
         id,
         text: outcome.completion.text,
         route: outcome.route,
-        fallback: outcome.fallbackUsed,
+        escalation: outcome.escalation?.reason,
         complexity: outcome.features.complexity,
-        threshold: outcome.decision.threshold,
-        reason: outcome.decision.reason,
         latencyMs: outcome.latencyMs,
         model: outcome.completion.model,
       });
@@ -499,7 +494,7 @@ function renderChatHtml(cspSource: string): string {
     scrollBottom();
   }
 
-  function addThinking(id, route) {
+  function addThinking(id) {
     var wrap = document.createElement('div');
     wrap.className = 'msg assistant';
     wrap.setAttribute('data-id', String(id));
@@ -510,7 +505,7 @@ function renderChatHtml(cspSource: string): string {
 
     var meta = document.createElement('div');
     meta.className = 'meta';
-    meta.appendChild(makeBadge('badge-thinking', route === 'local' ? 'local · 预测' : 'cloud · 预测'));
+    meta.appendChild(makeBadge('badge-thinking', 'local · 处理中'));
 
     wrap.appendChild(bubble);
     wrap.appendChild(meta);
@@ -533,18 +528,25 @@ function renderChatHtml(cspSource: string): string {
 
     bubble.textContent = payload.text;
     meta.innerHTML = '';
-    meta.appendChild(makeBadge(payload.route === 'local' ? 'badge-local' : 'badge-cloud', payload.route));
+    var badgeText = payload.route === 'local'
+      ? 'local'
+      : payload.route === 'escalated' ? 'local+专家' : 'cloud';
+    meta.appendChild(makeBadge(
+      payload.route === 'local' ? 'badge-local' : 'badge-cloud',
+      badgeText
+    ));
     var detail = document.createElement('span');
     detail.textContent =
-      (payload.fallback ? '（本地失败，已转云端）' : '') +
+      (payload.route === 'escalated' ? '（本地求助云端专家）' : '') +
       '复杂度 ' + Number(payload.complexity).toFixed(2) +
-      ' / 阈值 ' + Number(payload.threshold).toFixed(2) +
       ' · ' + payload.latencyMs + ' ms · ' + payload.model;
     meta.appendChild(detail);
-    var reason = document.createElement('span');
-    reason.textContent = payload.reason;
-    reason.style.opacity = '0.65';
-    meta.appendChild(reason);
+    if (payload.escalation) {
+      var reason = document.createElement('span');
+      reason.textContent = '子问题：' + payload.escalation;
+      reason.style.opacity = '0.65';
+      meta.appendChild(reason);
+    }
 
     var actions = document.createElement('div');
     actions.className = 'reply-actions';
@@ -630,6 +632,7 @@ function renderChatHtml(cspSource: string): string {
     if (trimmed.length === 0 || busy) { return; }
     setBusy(true);
     addUserMessage(trimmed);
+    addThinking(nextId + 1);
     vscode.postMessage({ type: 'send', prompt: trimmed });
     inputEl.value = '';
     inputEl.focus();
@@ -639,9 +642,6 @@ function renderChatHtml(cspSource: string): string {
     var message = event.data;
     if (!message || !message.type) { return; }
     switch (message.type) {
-      case 'preview':
-        addThinking(message.id, message.route);
-        break;
       case 'reply':
         finalizeReply(message.id, message);
         setBusy(false);

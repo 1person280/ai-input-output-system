@@ -56,7 +56,7 @@ export interface DecisionJournalSnapshot {
 }
 
 function isRouteKind(value: unknown): value is RouteKind {
-  return value === 'local' || value === 'cloud';
+  return value === 'local' || value === 'escalated' || value === 'cloud';
 }
 
 function finiteOr(value: unknown, fallback: number): number {

@@ -156,6 +156,11 @@
           "default": true,
           "description": "Let local server availability and recently observed latency take part in the routing decision."
         },
+        "aiio.escalationEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Let the local model escalate complex requests to a remote expert: the local model answers everything first and, when out of its depth, emits an [ESCALATE] marker with a focused sub-question that the cloud answers."
+        },
         "aiio.classifierWeights": {
           "type": "object",
           "default": {},

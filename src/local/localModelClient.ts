@@ -22,6 +22,45 @@ export interface LocalModelClientOptions {
 
 export type LocalEndpoint = 'chat-completions' | 'completion';
 
+/** 标记本地模型声明需要远程专家协助的协议前缀。 */
+export const ESCALATE_MARKER = '[ESCALATE]';
+
+/** 本地模型判断请求超出能力时，输出该结构求助；否则直接回答正文。 */
+export const ESCALATION_SYSTEM_PROMPT =
+  'You are a coding assistant running fully on the user\'s machine. ' +
+  'If the request is simple and you can answer it correctly, answer directly in the user\'s language. ' +
+  `If the task is complex (large refactor, architecture, cross-file changes, hard debugging), do NOT guess: reply with a single line starting with ${ESCALATE_MARKER} followed by ONE concise sub-question, phrased so a remote expert can answer it with minimal context. Do not output anything else after that line.`;
+
+/** 本地模型如何声明一次求助及其子问题。 */
+export interface EscalationRequest {
+  reason: string;
+}
+
+/** 本地一次生成的解析结果：直接回答，或求助（含子问题）。 */
+export type LocalTurn =
+  | { kind: 'answer'; text: string }
+  | { kind: 'escalate'; request: EscalationRequest };
+
+/**
+ * 解析本地输出：首个 ESCALATE 标记行之后的剩余内容视为子问题描述。
+ * 标记前若已有实质正文，把它一并并入子问题描述，避免丢失上下文。
+ */
+export function parseLocalTurn(text: string): LocalTurn {
+  const markerIndex = text.indexOf(ESCALATE_MARKER);
+  if (markerIndex === -1) {
+    return { kind: 'answer', text: text.trim() };
+  }
+  const before = text.slice(0, markerIndex).trim();
+  const after = text.slice(markerIndex + ESCALATE_MARKER.length);
+  const subQuestion = after.replace(/^[\s:：]+/, '').trim();
+  if (subQuestion.length === 0 && before.length === 0) {
+    // 空求助（只有标记没有内容）当作无效输出处理，与空答案同等对待。
+    return { kind: 'answer', text: '' };
+  }
+  const reason = [before, subQuestion].filter((part) => part.length > 0).join('\n\n');
+  return { kind: 'escalate', request: { reason } };
+}
+
 const DEFAULT_TIMEOUT_MS = 120_000;
 export const DEFAULT_LOCAL_CONTEXT_TOKENS = 65536;
 
@@ -87,14 +126,24 @@ export class LocalModelClient {
     }
   }
 
+  /**
+   * 一次本地生成。`escalate` 为 true 时在 system 前附加升级协议，
+   * 让本地模型可以声明 [ESCALATE] 求助；返回原始文本，由调用方用
+   * {@link parseLocalTurn} 解析。
+   */
   async complete(
     messages: ChatMessage[],
     endpoint: LocalEndpoint = 'chat-completions',
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    options: { escalate?: boolean } = {}
   ): Promise<CompletionResult> {
+    const effective =
+      options.escalate && messages.length > 0 && messages[0].role === 'system'
+        ? [{ ...messages[0], content: `${ESCALATION_SYSTEM_PROMPT}\n\n${messages[0].content}` }, ...messages.slice(1)]
+        : messages;
     return endpoint === 'completion'
-      ? this.completeViaLegacyEndpoint(messages, signal)
-      : this.completeViaChatEndpoint(messages, signal);
+      ? this.completeViaLegacyEndpoint(effective, signal)
+      : this.completeViaChatEndpoint(effective, signal);
   }
 
   private async completeViaChatEndpoint(

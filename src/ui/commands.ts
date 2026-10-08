@@ -8,7 +8,6 @@ import { ExtensionSettings } from '../config/settings';
 import { buildDownloadCommand, ModelManager } from '../local/modelManager';
 import { MetricsStore } from '../metrics/metricsStore';
 import type { FeedbackVerdict } from '../routing/decisionJournal';
-import type { AdaptiveThreshold } from '../routing/adaptiveThreshold';
 import type { OnlineQuality } from '../routing/decisionQuality';
 import type { EditorContext } from '../routing/requestClassifier';
 import { Router } from '../routing/router';
@@ -36,8 +35,6 @@ export interface CommandServices {
   recordFeedback(requestId: string, verdict: FeedbackVerdict): void | Promise<void>;
   /** 当前的路由决策质量（在线指标），供仪表盘展示。 */
   getRoutingQuality(): OnlineQuality;
-  /** 当前的有效阈值（基准 + 自适应下调），供仪表盘展示。 */
-  getAdaptiveThreshold(): AdaptiveThreshold;
   /** 立即重新探测本地服务健康状况（启停模型后调用）。 */
   refreshLocalHealth(): Promise<void>;
   /** 清空路由统计（仪表盘「重置统计」按钮）。 */
@@ -87,13 +84,12 @@ async function routePrompt(services: CommandServices): Promise<void> {
 
   const context = collectEditorContext(editor);
   const router = services.getRouter();
-  const preview = router.preview(prompt, context);
 
   try {
     const outcome = await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: `AI I/O · asking the ${preview.decision.route} model…`,
+        title: 'AI I/O · 本地模型处理中…',
         cancellable: true,
       },
       async (_progress, token) => {
@@ -108,9 +104,8 @@ async function routePrompt(services: CommandServices): Promise<void> {
     const header = [
       `# AI I/O answer`,
       '',
-      `- route: **${outcome.route}**${outcome.fallbackUsed ? ' (fallback from local)' : ''}`,
-      `- complexity: ${outcome.features.complexity.toFixed(2)} vs threshold ${outcome.decision.threshold.toFixed(2)}`,
-      `- reason: ${outcome.decision.reason}`,
+      `- route: **${outcome.route}**${outcome.route === 'escalated' ? ' (本地求助云端专家)' : ''}`,
+      `- complexity: ${outcome.features.complexity.toFixed(2)}`,
       `- est. tokens: ${outcome.features.estimatedTokens} · latency: ${outcome.latencyMs} ms`,
       `- model: ${outcome.completion.model}`,
       '',
@@ -264,13 +259,12 @@ async function runSelectionAction(
   }
   const prompt = ACTION_PROMPTS[action];
   const router = services.getRouter();
-  const preview = router.preview(prompt, context);
 
   try {
     const outcome = await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: `AI I/O · ${action} 选区（${preview.decision.route} 模型）…`,
+        title: `AI I/O · ${action} 选区（本地模型处理中）…`,
         cancellable: true,
       },
       async (_progress, token) => {
@@ -285,9 +279,8 @@ async function runSelectionAction(
     const header = [
       `# AI I/O · ${action}`,
       '',
-      `- route: **${outcome.route}**${outcome.fallbackUsed ? ' (fallback from local)' : ''}`,
-      `- complexity: ${outcome.features.complexity.toFixed(2)} vs threshold ${outcome.decision.threshold.toFixed(2)}`,
-      `- reason: ${outcome.decision.reason}`,
+      `- route: **${outcome.route}**${outcome.route === 'escalated' ? ' (本地求助云端专家)' : ''}`,
+      `- complexity: ${outcome.features.complexity.toFixed(2)}`,
       `- est. tokens: ${outcome.features.estimatedTokens} · latency: ${outcome.latencyMs} ms`,
       `- model: ${outcome.completion.model}`,
       '',
@@ -350,8 +343,7 @@ export function registerCommands(
       panel.update(
         ledger.snapshot(),
         ledger.allEntries(),
-        services.getRoutingQuality(),
-        services.getAdaptiveThreshold()
+        services.getRoutingQuality()
       );
     }),
     vscode.commands.registerCommand(MANAGE_MODEL_COMMAND, () =>
