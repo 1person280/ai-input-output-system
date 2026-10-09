@@ -15,6 +15,11 @@ import {
 
 export interface LocalModelClientOptions {
   serverUrl: string;
+  /**
+   * 模型名。llama.cpp 会忽略该字段，但 Ollama 的 OpenAI 兼容端点要求
+   * 请求体必须携带 `model`，否则返回 400。
+   */
+  model?: string;
   /** Context window advertised to the server; must match the launched process. */
   contextTokens?: number;
   timeoutMs?: number;
@@ -82,9 +87,11 @@ export class LocalModelClient {
   private readonly serverUrl: string;
   readonly contextTokens: number;
   private readonly timeoutMs: number;
+  private readonly model?: string;
 
   constructor(options: LocalModelClientOptions) {
     this.serverUrl = options.serverUrl.replace(/\/+$/, '');
+    this.model = options.model;
     this.contextTokens = options.contextTokens ?? DEFAULT_LOCAL_CONTEXT_TOKENS;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
@@ -156,6 +163,8 @@ export class LocalModelClient {
     // 透传给 chat 模板，显式关闭 enable_thinking 才会直接产出正文。
     // 该字段对不支持思考模式的模型无害（模板会忽略未知 kwargs）。
     const body = JSON.stringify({
+      // Ollama 的 OpenAI 兼容端点要求 model 字段；llama.cpp 忽略它。
+      ...(this.model ? { model: this.model } : {}),
       messages,
       temperature: 0.2,
       stream: false,

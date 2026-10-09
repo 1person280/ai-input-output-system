@@ -125,6 +125,42 @@ llama-server -m models/Qwen3-4B-Instruct-Q8_0.gguf --ctx-size 65536 -ngl 99
 | AI I/O: Manage Local Model | `aiio.manageModel` | 查看 / 下载 / 启动 / 停止本地模型。 |
 | AI I/O: Create Files From Requirement | `aiio.createFromRequirement` | 把自然语言需求变成工作区里的文件。 |
 
+## 理论 Benchmark（离线评估，不调用任何 LLM）
+
+不依赖本地/云端模型真实推理，直接在 **125 条标注语料**（`src/routing/corpus/routingCorpus.json`，
+local 65 条 / cloud 60 条）上运行分类器与路由策略，得到路由决策层的理论质量：
+对每条语料用 `requestClassifier` 提取特征，经 `routingPolicy.decideRoute` 判定去向，
+与人工标注的期望路由比对生成混淆矩阵。
+
+**路由准确率（默认阈值 0.5）：**
+
+| 指标 | 数值 |
+| --- | --- |
+| 准确率 accuracy | **100%**（125/125） |
+| falseLocal（应上云误判本地，最贵错误） | 0 |
+| falseCloud（应本地误上云，浪费调用） | 0 |
+| cloud F1 | 1.0000 |
+| 期望代价 expectedCost | 0（上限 375，代价模型 falseLocal×3 / falseCloud×1） |
+
+阈值扫描：0.5–0.7 全区间保持 100%；降到 0.45 以下会漏 14 个应上云请求
+（falseCloud+14，falseLocal 始终为 0）。默认 0.5 落在稳定区间中心。
+
+**理论节省率推演**（按三种去向的 token 流向）：
+
+| 请求去向 | 占比（语料分布） | 云端 token | 相对纯云端 |
+| --- | --- | --- | --- |
+| `local`（本地直答） | 65/125 = 52% | 0 | 节省 100% |
+| `escalated`（本地拆解 → 专家只答子问题 → 本地整合） | 60/125 = 48% | 仅子问题 prompt+回答 | ≈30–50% |
+| `cloud`（本地故障兜底） | 0（健康时） | 全量 | 0% |
+
+- `local` 请求云端零参与，这是节省的主体。
+- `escalated` 请求云端只处理本地拆出的聚焦子问题，而非原始完整上下文；
+  本地两趟（判定+整合）走免费算力，云端 token 通常只有纯直连的 30–50%。
+- 由此得理论加权节省率：**52%×100% + 48%×(50–70%) ≈ 76–86%** 的云端 token 节省
+  （本地服务健康、语料分布与实际负载相近时）。
+- 实测口径以仪表盘 `savingsRatio()` / `tokenSavingsRatio()` 为准——它们按真实
+  路由记账，本地失败降级的请求会如实计入云端流量，不会虚报。
+
 ## 节省量怎么算
 
 每个请求往账本追加一条记录：
